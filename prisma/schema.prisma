@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+//////////////////////////
+// ENUMS
+//////////////////////////
+
+enum Role {
+  admin
+  teacher
+  accounts
+  staff
+}
+
+enum StudentStatus {
+  active
+  inactive
+}
+
+enum AttendanceStatus {
+  present
+  absent
+}
+
+enum FeeStatus {
+  pending
+  partial
+  paid
+}
+
+enum FeeFrequency {
+  monthly
+  custom
+}
+
+enum PaymentMode {
+  cash
+  upi
+  bank
+}
+
+enum EventType {
+  attendance_marked
+  student_absent
+  fee_created
+  fee_paid
+}
+
+enum EventStatus {
+  pending
+  processed
+  failed
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+}
+
+//////////////////////////
+// CORE TENANCY
+//////////////////////////
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  type      String // "school" | "coaching"
+  language  String   @default("en")
+  timezone  String   @default("Asia/Kolkata")
+  udiseCode String? // optional
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches  Branch[]
+  users     User[]
+  students  Student[]
+  parents   Parent[]
+  feePlans  FeePlan[]
+  events    Event[]
+  templates MessageTemplate[]
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  pincode   String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  users        User[]
+  students     Student[]
+  batches      Batch[]
+  parents      Parent[]
+  events       Event[]
+  notifications NotificationLog[]
+}
+
+//////////////////////////
+// USERS & RBAC
+//////////////////////////
+
+model User {
+  id        String   @id @default(uuid())
+  orgId     String
+  branchId  String
+  firstName String
+  lastName  String
+  phone     String
+  email     String?
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+
+  batches            Batch[]
+  attendanceSessions AttendanceSession[]
+  payments           FeePayment[]
+}
+
+//////////////////////////
+// STUDENTS & PARENTS
+//////////////////////////
+
+model Student {
+  id            String        @id @default(uuid())
+  orgId         String
+  branchId      String
+  firstName     String
+  lastName      String
+  gender        String?
+  dob           DateTime?
+  category      String? // gen / sc / st / obc / minority (optional)
+  isCwsn        Boolean       @default(false)
+  admissionYear Int
+  status        StudentStatus @default(active)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+
+  studentParents    StudentParent[]
+  batch             Batch?             @relation(fields: [batchId], references: [id])
+  batchId           String?
+  attendanceRecords AttendanceRecord[]
+  fees              StudentFee[]
+}
+
+model Parent {
+  id        String   @id @default(uuid())
+  orgId     String
+  branchId  String
+  firstName String
+  lastName  String
+  phone     String
+  createdAt DateTime @default(now())
+
+  organization Organization? @relation(fields: [orgId], references: [id])
+  branch       Branch        @relation(fields: [branchId], references: [id])
+  students     StudentParent[]
+}
+
+model StudentParent {
+  studentId String
+  parentId  String
+  relation  String // father | mother | guardian
+
+  student Student @relation(fields: [studentId], references: [id])
+  parent  Parent  @relation(fields: [parentId], references: [id])
+
+  @@id([studentId, parentId])
+}
+
+//////////////////////////
+// BATCHES & ATTENDANCE
+//////////////////////////
+
+model Batch {
+  id            String   @id @default(uuid())
+  orgId         String
+  branchId      String
+  name          String
+  academicLevel String // primary | secondary | senior_secondary | coaching
+  stream        String?
+  teacherId     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  branch             Branch              @relation(fields: [branchId], references: [id])
+  students           Student[]
+  teacher            User?               @relation(fields: [teacherId], references: [id])
+  attendanceSessions AttendanceSession[]
+}
+
+model AttendanceSession {
+  id             String   @id @default(uuid())
+  orgId          String
+  branchId       String
+  batchId        String
+  attendanceDate DateTime @db.Date
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  batch     Batch              @relation(fields: [batchId], references: [id])
+  createdBy User               @relation(fields: [createdById], references: [id])
+  records   AttendanceRecord[]
+
+  @@unique([batchId, attendanceDate])
+}
+
+model AttendanceRecord {
+  id                  String           @id @default(uuid())
+  attendanceSessionId String
+  studentId           String
+  status              AttendanceStatus
+  markedAt            DateTime         @default(now())
+
+  session AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  student Student           @relation(fields: [studentId], references: [id])
+
+  @@unique([attendanceSessionId, studentId])
+}
+
+//////////////////////////
+// FEES & PAYMENTS
+//////////////////////////
+
+model FeePlan {
+  id        String       @id @default(uuid())
+  orgId     String
+  branchId  String
+  name      String
+  amount    Int
+  frequency FeeFrequency
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  studentFees  StudentFee[]
+}
+
+model StudentFee {
+  id          String    @id @default(uuid())
+  studentId   String
+  feePlanId   String
+  totalAmount Int
+  paidAmount  Int       @default(0)
+  dueDate     DateTime
+  status      FeeStatus @default(pending)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  student  Student      @relation(fields: [studentId], references: [id])
+  feePlan  FeePlan      @relation(fields: [feePlanId], references: [id])
+  payments FeePayment[]
+}
+
+model FeePayment {
+  id           String      @id @default(uuid())
+  studentFeeId String
+  amount       Int
+  paymentMode  PaymentMode
+  receivedById String
+  receivedAt   DateTime    @default(now())
+
+  studentFee StudentFee @relation(fields: [studentFeeId], references: [id])
+  receivedBy User       @relation(fields: [receivedById], references: [id])
+}
+
+//////////////////////////
+// EVENTS & NOTIFICATIONS
+//////////////////////////
+
+model Event {
+  id          String      @id @default(uuid())
+  orgId       String
+  branchId    String
+  type        EventType
+  payload     String // JSON string
+  status      EventStatus @default(pending)
+  processedAt DateTime?
+  createdAt   DateTime    @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+}
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  orgId     String
+  type      String // absent | fee_due | fee_paid
+  content   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  organization  Organization      @relation(fields: [orgId], references: [id])
+  notifications NotificationLog[]
+}
+
+model NotificationLog {
+  id                String             @id @default(uuid())
+  orgId             String
+  branchId          String
+  recipientPhone    String
+  templateId        String
+  status            NotificationStatus @default(pending)
+  providerMessageId String?
+  errorMessage      String?
+  entityType        String?
+  entityId          String?
+  sentAt            DateTime           @default(now())
+
+  branch   Branch          @relation(fields: [branchId], references: [id])
+  template MessageTemplate @relation(fields: [templateId], references: [id])
+}

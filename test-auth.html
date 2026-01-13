@@ -1,0 +1,53 @@
+<!-- test-auth.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-auth-compat.js"></script>
+  </head>
+  <body>
+    <h2>Firebase Auth Test</h2>
+    <input id="phone" placeholder="Phone (+919876543210)" />
+    <button onclick="sendOTP()">Send OTP</button>
+    <br /><br />
+    <input id="otp" placeholder="OTP Code" />
+    <button onclick="verifyOTP()">Verify & Get Token</button>
+    <br /><br />
+    <div id="recaptcha-container"></div>
+    <pre id="token"></pre>
+
+    <script>
+      firebase.initializeApp({
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+      });
+
+      let confirmationResult;
+
+      function sendOTP() {
+        const phone = document.getElementById("phone").value;
+        const recaptcha = new firebase.auth.RecaptchaVerifier(
+          "recaptcha-container"
+        );
+        firebase
+          .auth()
+          .signInWithPhoneNumber(phone, recaptcha)
+          .then((result) => {
+            confirmationResult = result;
+            alert("OTP Sent!");
+          });
+      }
+
+      function verifyOTP() {
+        const otp = document.getElementById("otp").value;
+        confirmationResult
+          .confirm(otp)
+          .then((result) => result.user.getIdToken())
+          .then((token) => {
+            document.getElementById("token").textContent = token;
+          });
+      }
+    </script>
+  </body>
+</html>
