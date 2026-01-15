@@ -3,9 +3,11 @@ import type { ProtectedRequest } from "../../types/request.js";
 import { getTenantScopeFromRequest } from "../../middleware/branch.middleware.js";
 import {
   getAttendanceQuerySchema,
+  getAttendanceHistoryQuerySchema,
   markAttendanceSchema,
 } from "./attendance.schema.js";
 import * as attendanceService from "./attendance.service.js";
+import { parsePaginationParams } from "../../utils/pagination.js";
 
 /**
  * GET /attendance?batchId&date
@@ -98,4 +100,59 @@ export async function markAttendance(
     data: attendance,
     message: "Attendance marked successfully",
   });
+}
+
+/**
+ * GET /attendance/history
+ * Get attendance history with pagination and filters
+ */
+export async function getAttendanceHistory(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const query = getAttendanceHistoryQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const { userId, role } = request.userContext;
+
+  // If filtering by batch, check access
+  if (query.data.batchId) {
+    const canAccess = await attendanceService.canAccessBatch(
+      query.data.batchId,
+      userId,
+      role,
+      scope
+    );
+
+    if (!canAccess) {
+      return reply.code(403).send({
+        error: "Forbidden",
+        message: "You do not have access to this batch",
+      });
+    }
+  }
+
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
+  });
+
+  const history = await attendanceService.getAttendanceHistory(
+    {
+      batchId: query.data.batchId,
+      startDate: query.data.startDate,
+      endDate: query.data.endDate,
+    },
+    pagination,
+    scope
+  );
+
+  return reply.code(200).send(history);
 }

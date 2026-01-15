@@ -3,7 +3,9 @@ import type { TenantScope } from "../../types/request.js";
 import { BadRequestError } from "../../utils/error-handler.js";
 import { emitEvent, emitEvents, EVENT_TYPES } from "../events/index.js";
 import { ROLES } from "../../config/permissions.js";
-import type { MarkAttendanceInput } from "./attendance.schema.js";
+import type { MarkAttendanceInput, GetAttendanceHistoryQuery } from "./attendance.schema.js";
+import { createPaginatedResponse, calculateSkip, type PaginationParams } from "../../utils/pagination.js";
+import type { Prisma } from "@prisma/client";
 
 /**
  * Helper to format full name
@@ -249,4 +251,101 @@ export async function markAttendance(
 
   // Return the updated attendance
   return getAttendance(input.batchId, input.date, scope);
+}
+
+/**
+ * Get attendance history with pagination and filters
+ */
+export async function getAttendanceHistory(
+  filters: {
+    batchId?: string;
+    startDate?: string;
+    endDate?: string;
+  },
+  pagination: PaginationParams,
+  scope: TenantScope
+) {
+  // Build where clause
+  const where: Prisma.AttendanceSessionWhereInput = {
+    orgId: scope.orgId,
+    branchId: scope.branchId,
+  };
+
+  // Filter by batch
+  if (filters.batchId) {
+    where.batchId = filters.batchId;
+  }
+
+  // Filter by date range
+  if (filters.startDate || filters.endDate) {
+    where.attendanceDate = {};
+    if (filters.startDate) {
+      where.attendanceDate.gte = new Date(filters.startDate);
+    }
+    if (filters.endDate) {
+      // Add 1 day to include the end date
+      const endDate = new Date(filters.endDate);
+      endDate.setDate(endDate.getDate() + 1);
+      where.attendanceDate.lt = endDate;
+    }
+  }
+
+  // Execute query with count
+  const [sessions, total] = await Promise.all([
+    prisma.attendanceSession.findMany({
+      where,
+      include: {
+        batch: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        records: {
+          select: {
+            status: true,
+          },
+        },
+      },
+      orderBy: { attendanceDate: "desc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.attendanceSession.count({ where }),
+  ]);
+
+  // Format results with stats
+  const formattedSessions = sessions.map((session) => {
+    const presentCount = session.records.filter((r) => r.status === "present").length;
+    const absentCount = session.records.filter((r) => r.status === "absent").length;
+    const totalStudents = session.records.length;
+    const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
+
+    return {
+      id: session.id,
+      date: session.attendanceDate.toISOString().split("T")[0],
+      batchId: session.batch.id,
+      batchName: session.batch.name,
+      createdBy: {
+        id: session.createdBy.id,
+        name: formatFullName(session.createdBy.firstName, session.createdBy.lastName),
+      },
+      createdAt: session.createdAt,
+      stats: {
+        present: presentCount,
+        absent: absentCount,
+        total: totalStudents,
+        attendanceRate,
+      },
+    };
+  });
+
+  return createPaginatedResponse(formattedSessions, total, pagination);
 }

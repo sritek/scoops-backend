@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
-import type { AuthUser, UserContext, Role } from "../types/auth.js";
-import { verifyIdToken } from "../config/firebase.js";
+import type { UserContext, Role } from "../types/auth.js";
+import { verifyToken, type JwtPayload } from "../modules/auth/auth.service.js";
 import { prisma } from "../config/database.js";
 import { getPermissionsForRole } from "../config/permissions.js";
 import { createModuleLogger } from "../config/logger.js";
@@ -31,31 +31,13 @@ function extractToken(
 }
 
 /**
- * Look up user in database by phone or email
- * Phone is preferred since Firebase Phone Auth is primary
+ * Load user from database by ID (from JWT payload)
  */
-async function loadUserFromDb(authUser: AuthUser, log: FastifyRequest["log"]) {
-  log.debug(
-    { phone: authUser.phone ?? null, email: authUser.email ?? null },
-    "Looking up user in database"
-  );
+async function loadUserFromDb(payload: JwtPayload, log: FastifyRequest["log"]) {
+  log.debug({ userId: payload.userId }, "Looking up user in database");
 
-  console.log("authUser", authUser);
-
-  // Look up by phone first (primary), then email (fallback)
-  const whereClause = authUser.phone
-    ? { phone: authUser.phone }
-    : authUser.email
-    ? { email: authUser.email }
-    : null;
-
-  if (!whereClause) {
-    log.warn("No phone or email available for user lookup");
-    return null;
-  }
-
-  const user = await prisma.user.findFirst({
-    where: whereClause,
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
     select: {
       id: true,
       orgId: true,
@@ -81,14 +63,14 @@ async function loadUserFromDb(authUser: AuthUser, log: FastifyRequest["log"]) {
  *
  * Responsibilities:
  * - Extracts Bearer token from Authorization header
- * - Verifies Firebase ID token
- * - Looks up user in database by phone/email
+ * - Verifies JWT token
+ * - Looks up user in database to ensure still valid
  * - Validates user exists, is active, and has branch access
  * - Builds and attaches userContext with role and permissions
  *
  * Security:
  * - Role comes from DB, NOT from token
- * - Org/Branch comes from DB, NOT from frontend
+ * - Org/Branch validated from DB
  * - Permissions derived server-side using role mapping
  */
 export async function authMiddleware(
@@ -116,11 +98,11 @@ export async function authMiddleware(
     return;
   }
 
-  // Step 2: Verify Firebase token
-  log.debug({ step: 2 }, "Verifying Firebase ID token");
-  const decoded = await verifyIdToken(token);
+  // Step 2: Verify JWT token
+  log.debug({ step: 2 }, "Verifying JWT token");
+  const payload = verifyToken(token);
 
-  if (!decoded) {
+  if (!payload) {
     log.warn("Invalid or expired token");
     reply.code(401).send({
       error: "Unauthorized",
@@ -129,20 +111,14 @@ export async function authMiddleware(
     return;
   }
 
-  log.debug({ uid: decoded.uid }, "Token verified");
+  log.debug({ userId: payload.userId }, "Token verified");
 
-  const authUser: AuthUser = {
-    id: decoded.uid,
-    email: decoded.email || null,
-    phone: decoded.phone_number || null,
-  };
-
-  // Step 3: Load user from database
+  // Step 3: Load user from database (verify user still exists and is active)
   log.debug({ step: 3 }, "Loading user from database");
-  const dbUser = await loadUserFromDb(authUser, log);
+  const dbUser = await loadUserFromDb(payload, log);
 
   if (!dbUser) {
-    log.warn({ firebaseUid: decoded.uid }, "User not found in system");
+    log.warn({ userId: payload.userId }, "User not found in system");
     reply.code(403).send({
       error: "Forbidden",
       message: "User not found in system",
@@ -187,7 +163,6 @@ export async function authMiddleware(
   };
 
   // Attach to request
-  request.authUser = authUser;
   request.userContext = userContext;
 
   log.info(

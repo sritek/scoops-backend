@@ -27,7 +27,7 @@ describe("Happy Path Flows", () => {
     it("should create a new student with parent (201)", async () => {
       const response = await request(app.server)
         .post("/api/v1/students")
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           firstName: "Flow",
           lastName: "TestStudent",
@@ -75,7 +75,7 @@ describe("Happy Path Flows", () => {
     it("should be able to retrieve the created student (200)", async () => {
       const response = await request(app.server)
         .get(`/api/v1/students/${createdStudentId}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
       const body = response.body as StudentResponse;
 
       expect(response.status).toBe(200);
@@ -123,7 +123,7 @@ describe("Happy Path Flows", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.teacher1.email))
+        .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
           batchId: teacherBatchId,
           date: dateStr,
@@ -230,7 +230,7 @@ describe("Happy Path Flows", () => {
 
       const response = await request(app.server)
         .post("/api/v1/fees/payment")
-        .set(getAuthHeaders(USERS.accounts.email))
+        .set(await getAuthHeaders(USERS.accounts.email))
         .send({
           studentFeeId: pendingFeeId,
           amount: paymentAmount,
@@ -340,7 +340,7 @@ describe("Happy Path Flows", () => {
       // Pay the full amount
       const response = await request(app.server)
         .post("/api/v1/fees/payment")
-        .set(getAuthHeaders(USERS.accounts.email))
+        .set(await getAuthHeaders(USERS.accounts.email))
         .send({
           studentFeeId: testFeeId,
           amount: totalAmount,
@@ -368,7 +368,7 @@ describe("Happy Path Flows", () => {
     it("should create a new batch (201)", async () => {
       const response = await request(app.server)
         .post("/api/v1/batches")
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           name: "Flow Test Batch",
           academicLevel: "middle",
@@ -403,7 +403,7 @@ describe("Happy Path Flows", () => {
 
       const response = await request(app.server)
         .put(`/api/v1/batches/${createdBatchId}`)
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           teacherId: teacher?.id,
         });
@@ -436,7 +436,7 @@ describe("Happy Path Flows", () => {
 
       const response = await request(app.server)
         .get(`/api/v1/attendance?batchId=${batch?.id}&date=${today}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -449,7 +449,7 @@ describe("Happy Path Flows", () => {
     it("should return dashboard summary", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
       const body = response.body as DashboardResponse;
 
       expect(response.status).toBe(200);

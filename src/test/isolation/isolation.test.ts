@@ -106,7 +106,7 @@ describe("Data Isolation", () => {
     it("Org1 admin cannot see Org2 students in list", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
       const body = response.body as StudentResponse[];
 
       expect(response.status).toBe(200);
@@ -120,7 +120,7 @@ describe("Data Isolation", () => {
     it("Org1 admin cannot access Org2 student by ID (403/404)", async () => {
       const response = await request(app.server)
         .get(`/api/v1/students/${org2StudentId}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       // Should be 403 (forbidden) or 404 (not found in scope)
       expect([403, 404]).toContain(response.status);
@@ -129,7 +129,7 @@ describe("Data Isolation", () => {
     it("Org2 admin cannot see Org1 students in list", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(ORG2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG2_USERS.admin.email));
       const body = response.body as StudentResponse[];
 
       expect(response.status).toBe(200);
@@ -145,7 +145,7 @@ describe("Data Isolation", () => {
 
       const response = await request(app.server)
         .get(`/api/v1/attendance?batchId=${org1Branch1BatchId}&date=${today}`)
-        .set(getAuthHeaders(ORG2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG2_USERS.admin.email));
       const body = response.body as AttendanceResponse | null;
 
       // Should be 403 or return empty/error
@@ -165,7 +165,7 @@ describe("Data Isolation", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           batchId: org2BatchId,
           date: today,
@@ -189,7 +189,7 @@ describe("Data Isolation", () => {
     it("Branch1 admin cannot see Branch2 students in list", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
       const body = response.body as StudentResponse[];
 
       expect(response.status).toBe(200);
@@ -203,7 +203,7 @@ describe("Data Isolation", () => {
     it("Branch1 admin cannot access Branch2 student by ID (403/404)", async () => {
       const response = await request(app.server)
         .get(`/api/v1/students/${org1Branch2StudentId}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       // Should be 403 (forbidden) or 404 (not found in scope)
       expect([403, 404]).toContain(response.status);
@@ -212,7 +212,7 @@ describe("Data Isolation", () => {
     it("Branch2 admin cannot see Branch1 students in list", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
       const body = response.body as StudentResponse[];
 
       expect(response.status).toBe(200);
@@ -228,7 +228,7 @@ describe("Data Isolation", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           batchId: org1Branch2BatchId,
           date: today,
@@ -247,7 +247,7 @@ describe("Data Isolation", () => {
     it("Branch2 admin cannot view Branch1 batches", async () => {
       const response = await request(app.server)
         .get("/api/v1/batches")
-        .set(getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
       const body = response.body as BatchResponse[];
 
       expect(response.status).toBe(200);
@@ -261,7 +261,7 @@ describe("Data Isolation", () => {
     it("Branch1 teacher cannot access Branch2 data", async () => {
       const response = await request(app.server)
         .get(`/api/v1/students/${org1Branch2StudentId}`)
-        .set(getAuthHeaders(USERS.teacher1.email));
+        .set(await getAuthHeaders(USERS.teacher1.email));
 
       // Should be 403 (forbidden) or 404 (not found in scope)
       expect([403, 404]).toContain(response.status);
@@ -275,7 +275,7 @@ describe("Data Isolation", () => {
     it("Cannot update student from another branch (403/404)", async () => {
       const response = await request(app.server)
         .put(`/api/v1/students/${org1Branch2StudentId}`)
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           firstName: "Hacked",
         });
@@ -287,7 +287,7 @@ describe("Data Isolation", () => {
     it("Cannot update student from another organization (403/404)", async () => {
       const response = await request(app.server)
         .put(`/api/v1/students/${org2StudentId}`)
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           firstName: "Hacked",
         });
@@ -299,7 +299,7 @@ describe("Data Isolation", () => {
     it("Cannot deactivate student from another branch (403/404)", async () => {
       const response = await request(app.server)
         .delete(`/api/v1/students/${org1Branch2StudentId}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       // Should be forbidden or not found
       expect([403, 404]).toContain(response.status);
@@ -308,7 +308,7 @@ describe("Data Isolation", () => {
     it("Cannot update batch from another branch (403/404)", async () => {
       const response = await request(app.server)
         .put(`/api/v1/batches/${org1Branch2BatchId}`)
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           name: "Hacked Batch",
         });
@@ -325,7 +325,7 @@ describe("Data Isolation", () => {
     it("Branch1 dashboard only shows Branch1 data", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
       // Dashboard should only reflect Branch1 data
@@ -336,7 +336,7 @@ describe("Data Isolation", () => {
     it("Branch2 dashboard only shows Branch2 data", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG1_BRANCH2_USERS.admin.email));
 
       expect(response.status).toBe(200);
       // Dashboard should only reflect Branch2 data
@@ -346,7 +346,7 @@ describe("Data Isolation", () => {
     it("Org2 dashboard only shows Org2 data", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(ORG2_USERS.admin.email));
+        .set(await getAuthHeaders(ORG2_USERS.admin.email));
 
       expect(response.status).toBe(200);
       // Dashboard should only reflect Org2 data

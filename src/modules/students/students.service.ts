@@ -1,39 +1,103 @@
+import type { Prisma, StudentStatus } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import { NotFoundError } from "../../utils/error-handler.js";
+import {
+  type PaginationParams,
+  createPaginatedResponse,
+  calculateSkip,
+} from "../../utils/pagination.js";
 import type {
   CreateStudentInput,
   UpdateStudentInput,
   ParentInput,
+  StudentFilters,
 } from "./students.schema.js";
 
 /**
- * Include clause for student queries to fetch parents
+ * Include clause for student queries to fetch parents and batch
  */
 const studentInclude = {
   studentParents: {
     include: {
-      parent: true,
+      parent: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          photoUrl: true,
+        },
+      },
+    },
+  },
+  batch: {
+    select: {
+      id: true,
+      name: true,
     },
   },
 };
 
 /**
- * Get all students for a branch with parents
+ * Get students for a branch with pagination and filters
  */
-export async function getStudents(scope: TenantScope) {
-  const students = await prisma.student.findMany({
-    where: {
-      orgId: scope.orgId,
-      branchId: scope.branchId,
-    },
-    include: studentInclude,
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+export async function getStudents(
+  scope: TenantScope,
+  pagination: PaginationParams,
+  filters?: StudentFilters
+) {
+  // Build where clause with tenant scope and filters
+  const where: Prisma.StudentWhereInput = {
+    orgId: scope.orgId,
+    branchId: scope.branchId,
+  };
 
-  return students.map(formatStudentWithParents);
+  // Add status filter
+  if (filters?.status) {
+    where.status = filters.status as StudentStatus;
+  }
+
+  // Add batch filter
+  if (filters?.batchId) {
+    where.batchId = filters.batchId;
+  }
+
+  // Add gender filter
+  if (filters?.gender) {
+    where.gender = filters.gender;
+  }
+
+  // Add category filter
+  if (filters?.category) {
+    where.category = filters.category;
+  }
+
+  // Add search filter (search by first name or last name)
+  if (filters?.search) {
+    where.OR = [
+      { firstName: { contains: filters.search, mode: "insensitive" } },
+      { lastName: { contains: filters.search, mode: "insensitive" } },
+    ];
+  }
+
+  // Execute query and count in parallel
+  const [students, total] = await Promise.all([
+    prisma.student.findMany({
+      where,
+      include: studentInclude,
+      orderBy: { createdAt: "desc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.student.count({ where }),
+  ]);
+
+  return createPaginatedResponse(
+    students.map(formatStudentWithParents),
+    total,
+    pagination
+  );
 }
 
 /**
@@ -97,6 +161,7 @@ export async function createStudent(
         dob: input.dob ? new Date(input.dob) : null,
         category: input.category,
         isCwsn: input.isCwsn ?? false,
+        photoUrl: input.photoUrl || null,
         admissionYear: input.admissionYear,
         batchId: input.batchId,
         status: "active",
@@ -157,6 +222,7 @@ export async function updateStudent(
         dob: input.dob ? new Date(input.dob) : undefined,
         category: input.category,
         isCwsn: input.isCwsn,
+        photoUrl: input.photoUrl,
         admissionYear: input.admissionYear,
         batchId: input.batchId,
         status: input.status,
@@ -233,16 +299,23 @@ async function createAndLinkParents(
       },
     });
 
-    // Create parent if doesn't exist
+    // Create parent if doesn't exist, or update photo if provided
     if (!parent) {
       parent = await tx.parent.create({
         data: {
           firstName: parentInput.firstName,
           lastName: parentInput.lastName,
           phone: parentInput.phone,
+          photoUrl: parentInput.photoUrl || null,
           orgId: scope.orgId,
           branchId: scope.branchId,
         },
+      });
+    } else if (parentInput.photoUrl) {
+      // Update parent photo if provided
+      parent = await tx.parent.update({
+        where: { id: parent.id },
+        data: { photoUrl: parentInput.photoUrl },
       });
     }
 
@@ -265,7 +338,7 @@ function formatFullName(firstName: string, lastName: string): string {
 }
 
 /**
- * Format student with parents for response
+ * Format student with parents and batch for response
  */
 function formatStudentWithParents(student: {
   id: string;
@@ -277,6 +350,7 @@ function formatStudentWithParents(student: {
   dob: Date | null;
   category: string | null;
   isCwsn: boolean | null;
+  photoUrl: string | null;
   admissionYear: number;
   status: string;
   batchId: string | null;
@@ -289,22 +363,29 @@ function formatStudentWithParents(student: {
       firstName: string;
       lastName: string;
       phone: string;
+      photoUrl: string | null;
     };
   }[];
+  batch: {
+    id: string;
+    name: string;
+  } | null;
 }) {
-  const { studentParents, firstName, lastName, ...studentData } = student;
+  const { studentParents, firstName, lastName, batch, ...studentData } = student;
 
   return {
     ...studentData,
     firstName,
     lastName,
     fullName: formatFullName(firstName, lastName),
+    batchName: batch?.name ?? null,
     parents: studentParents.map((sp) => ({
       id: sp.parent.id,
       firstName: sp.parent.firstName,
       lastName: sp.parent.lastName,
       fullName: formatFullName(sp.parent.firstName, sp.parent.lastName),
       phone: sp.parent.phone,
+      photoUrl: sp.parent.photoUrl,
       relation: sp.relation,
     })),
   };

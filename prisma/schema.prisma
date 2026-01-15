@@ -76,6 +76,10 @@ model Organization {
   language  String   @default("en")
   timezone  String   @default("Asia/Kolkata")
   udiseCode String? // optional
+  logoUrl   String?  @db.Text // Base64 encoded organization logo
+  phone     String?  // Contact phone number
+  email     String?  // Contact email address
+  address   String?  // Primary address
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -114,17 +118,21 @@ model Branch {
 //////////////////////////
 
 model User {
-  id        String   @id @default(uuid())
-  orgId     String
-  branchId  String
-  firstName String
-  lastName  String
-  phone     String
-  email     String?
-  role      Role
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  orgId              String
+  branchId           String
+  employeeId         String   @unique // Auto-generated (e.g., "XK7R2M")
+  passwordHash       String            // bcrypt hashed password
+  mustChangePassword Boolean  @default(true) // Force password change on first login
+  firstName          String
+  lastName           String
+  phone              String
+  email              String?
+  photoUrl           String?  @db.Text // Base64 encoded profile photo
+  role               Role
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   organization Organization @relation(fields: [orgId], references: [id])
   branch       Branch       @relation(fields: [branchId], references: [id])
@@ -148,6 +156,7 @@ model Student {
   dob           DateTime?
   category      String? // gen / sc / st / obc / minority (optional)
   isCwsn        Boolean       @default(false)
+  photoUrl      String?       @db.Text // Base64 encoded profile photo
   admissionYear Int
   status        StudentStatus @default(active)
   createdAt     DateTime      @default(now())
@@ -170,6 +179,7 @@ model Parent {
   firstName String
   lastName  String
   phone     String
+  photoUrl  String?  @db.Text // Base64 encoded profile photo
   createdAt DateTime @default(now())
 
   organization Organization? @relation(fields: [orgId], references: [id])
@@ -304,12 +314,14 @@ model Event {
 }
 
 model MessageTemplate {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   orgId     String
   type      String // absent | fee_due | fee_paid
+  name      String?  // Display name for the template
   content   String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
 
   organization  Organization      @relation(fields: [orgId], references: [id])
   notifications NotificationLog[]

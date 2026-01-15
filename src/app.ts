@@ -14,11 +14,15 @@ import { env } from "./config/env.js";
 import { testDbConnection } from "./config/database.js";
 
 // Import module routes
+import { authRoutes } from "./modules/auth/index.js";
 import { studentsRoutes } from "./modules/students/index.js";
 import { batchesRoutes } from "./modules/batches/index.js";
 import { attendanceRoutes } from "./modules/attendance/index.js";
 import { feesRoutes } from "./modules/fees/index.js";
 import { dashboardRoutes } from "./modules/dashboard/index.js";
+import { usersRoutes } from "./modules/users/index.js";
+import { branchRoutes } from "./modules/branch/index.js";
+import { settingsRoutes } from "./modules/settings/index.js";
 
 const log = createModuleLogger("app");
 
@@ -28,6 +32,7 @@ const log = createModuleLogger("app");
  */
 const PUBLIC_ROUTES = [
   "/health",
+  "/api/v1/auth/login", // Login endpoint
   "/docs", // Swagger UI (has own auth hook in production)
   "/docs/json", // OpenAPI JSON spec
   "/docs/yaml", // OpenAPI YAML spec
@@ -71,6 +76,9 @@ export async function buildApp() {
   await app.register(cors, {
     origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN,
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Branch-ID"],
+    exposedHeaders: ["X-Total-Count"],
   });
   log.info("CORS registered");
 
@@ -162,52 +170,9 @@ export async function buildApp() {
   );
   log.debug("Route registered: GET /health (public)");
 
-  // GET /me - Current authenticated user info (protected)
-  app.get(
-    "/api/v1/me",
-    {
-      schema: {
-        tags: ["Auth"],
-        summary: "Get current user",
-        description: "Returns authenticated user info from session",
-        security: [{ bearerAuth: [] }],
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              id: { type: "string", format: "uuid" },
-              name: { type: "string" },
-              firstName: { type: "string" },
-              lastName: { type: "string" },
-              role: {
-                type: "string",
-                enum: ["admin", "teacher", "accounts", "staff"],
-              },
-              branchId: { type: "string", format: "uuid" },
-              permissions: {
-                type: "array",
-                items: { type: "string" },
-              },
-            },
-          },
-        },
-      },
-    },
-    async (request) => {
-      const { userId, firstName, lastName, role, branchId, permissions } =
-        request.userContext;
-      return {
-        id: userId,
-        name: `${firstName} ${lastName}`.trim(),
-        firstName,
-        lastName,
-        role,
-        branchId,
-        permissions,
-      };
-    }
-  );
-  log.debug("Route registered: GET /me (protected)");
+  // Auth routes (login is public, others protected)
+  await app.register(authRoutes, { prefix: "/api/v1/auth" });
+  log.debug("Route registered: /api/v1/auth");
 
   // API v1 routes (protected)
   await app.register(studentsRoutes, { prefix: "/api/v1/students" });
@@ -224,6 +189,15 @@ export async function buildApp() {
 
   await app.register(dashboardRoutes, { prefix: "/api/v1/dashboard" });
   log.debug("Route registered: /api/v1/dashboard");
+
+  await app.register(usersRoutes, { prefix: "/api/v1/users" });
+  log.debug("Route registered: /api/v1/users");
+
+  await app.register(branchRoutes, { prefix: "/api/v1/branches" });
+  log.debug("Route registered: /api/v1/branches");
+
+  await app.register(settingsRoutes, { prefix: "/api/v1/settings" });
+  log.debug("Route registered: /api/v1/settings");
 
   log.info("All routes registered");
 

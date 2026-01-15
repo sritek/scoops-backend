@@ -1,57 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import type { FastifyInstance } from "fastify";
-import { buildTestApp } from "../helpers.js";
+import { buildTestApp, createTestToken, createTokenPayload } from "../helpers.js";
 import { prisma } from "../setup.js";
 import type { ApiErrorResponse, MeResponse, HealthResponse } from "../types.js";
+import { hashPassword } from "../../modules/auth/auth.service.js";
 
-// Mock Firebase verifyIdToken before importing anything that uses it
-vi.mock("../../config/firebase.js", () => ({
-  verifyIdToken: vi.fn(),
-}));
-
-// Import the mocked function
-import { verifyIdToken } from "../../config/firebase.js";
-const mockVerifyIdToken = vi.mocked(verifyIdToken);
-
-// Known test data from seed
-const TEST_USERS = {
-  admin: {
-    phone: "9876543210",
-    email: "admin@abccoaching.com",
-    firstName: "Rajesh",
-    lastName: "Kumar",
-    role: "admin",
-  },
-  teacher: {
-    phone: "9876543211",
-    email: "priya@abccoaching.com",
-    firstName: "Priya",
-    lastName: "Sharma",
-    role: "teacher",
-  },
+// Known test data - will be populated from seed
+let testUsers: {
+  admin: { id: string; employeeId: string; orgId: string; branchId: string };
+  teacher: { id: string; employeeId: string; orgId: string; branchId: string };
 };
-
-// Mock helpers
-function mockValidTokenWithPhone(phone: string): void {
-  mockVerifyIdToken.mockResolvedValueOnce({
-    uid: `test-uid-${phone}`,
-    phone_number: phone,
-    email: undefined,
-  });
-}
-
-function mockValidTokenWithEmail(email: string): void {
-  mockVerifyIdToken.mockResolvedValueOnce({
-    uid: `test-uid-${email}`,
-    phone_number: undefined,
-    email: email,
-  });
-}
-
-function mockInvalidToken(): void {
-  mockVerifyIdToken.mockResolvedValueOnce(null);
-}
 
 describe("Authentication", () => {
   let app: FastifyInstance;
@@ -59,15 +18,30 @@ describe("Authentication", () => {
   beforeAll(async () => {
     app = await buildTestApp();
     await app.ready();
+
+    // Get test users from database (created by seed)
+    const admin = await prisma.user.findFirst({
+      where: { email: "admin@abccoaching.com" },
+      select: { id: true, employeeId: true, orgId: true, branchId: true },
+    });
+
+    const teacher = await prisma.user.findFirst({
+      where: { email: "priya@abccoaching.com" },
+      select: { id: true, employeeId: true, orgId: true, branchId: true },
+    });
+
+    if (!admin || !teacher) {
+      throw new Error("Test users not found. Please run seed first.");
+    }
+
+    testUsers = {
+      admin: { id: admin.id, employeeId: admin.employeeId, orgId: admin.orgId, branchId: admin.branchId },
+      teacher: { id: teacher.id, employeeId: teacher.employeeId, orgId: teacher.orgId, branchId: teacher.branchId },
+    };
   });
 
   afterAll(async () => {
     await app.close();
-  });
-
-  beforeEach(() => {
-    // Clear all mocks before each test
-    vi.clearAllMocks();
   });
 
   // ============================================
@@ -75,7 +49,7 @@ describe("Authentication", () => {
   // ============================================
   describe("Token validation", () => {
     it("should return 401 when Authorization header is missing", async () => {
-      const response = await request(app.server).get("/me");
+      const response = await request(app.server).get("/api/v1/auth/me");
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(401);
@@ -85,7 +59,7 @@ describe("Authentication", () => {
 
     it("should return 401 when Authorization header has wrong format", async () => {
       const response = await request(app.server)
-        .get("/me")
+        .get("/api/v1/auth/me")
         .set({ Authorization: "InvalidFormat token123" });
       const body = response.body as ApiErrorResponse;
 
@@ -94,30 +68,15 @@ describe("Authentication", () => {
       expect(body.message).toBe("Missing authorization token");
     });
 
-    it("should return 401 when token is invalid (Firebase rejects)", async () => {
-      mockInvalidToken();
-
+    it("should return 401 when token is invalid", async () => {
       const response = await request(app.server)
-        .get("/me")
+        .get("/api/v1/auth/me")
         .set({ Authorization: "Bearer invalid-token" });
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(401);
       expect(body.error).toBe("Unauthorized");
       expect(body.message).toBe("Invalid or expired token");
-      expect(mockVerifyIdToken).toHaveBeenCalledWith("invalid-token");
-    });
-
-    it("should return 401 when token is expired", async () => {
-      mockInvalidToken();
-
-      const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer expired-token" });
-      const body = response.body as ApiErrorResponse;
-
-      expect(response.status).toBe(401);
-      expect(body.error).toBe("Unauthorized");
     });
   });
 
@@ -126,12 +85,14 @@ describe("Authentication", () => {
   // ============================================
   describe("User validation", () => {
     it("should return 403 when user is not found in database", async () => {
-      // Valid token but phone doesn't exist in DB
-      mockValidTokenWithPhone("9999999999");
+      // Create a valid token but for a non-existent user
+      const token = createTestToken(
+        createTokenPayload("non-existent-id", "FAKE123", testUsers.admin.orgId, testUsers.admin.branchId, "admin")
+      );
 
       const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token-unknown-user" });
+        .get("/api/v1/auth/me")
+        .set({ Authorization: `Bearer ${token}` });
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(403);
@@ -140,11 +101,17 @@ describe("Authentication", () => {
     });
 
     it("should return 403 when user is inactive", async () => {
-      // First, create an inactive user
+      // Create an inactive user
+      const org = await prisma.organization.findFirst();
+      const branch = await prisma.branch.findFirst();
+
       const inactiveUser = await prisma.user.create({
         data: {
-          orgId: (await prisma.organization.findFirst())!.id,
-          branchId: (await prisma.branch.findFirst())!.id,
+          orgId: org!.id,
+          branchId: branch!.id,
+          employeeId: "INACT01",
+          passwordHash: await hashPassword("Password123"),
+          mustChangePassword: false,
           firstName: "Inactive",
           lastName: "User",
           phone: "9999888877",
@@ -155,11 +122,13 @@ describe("Authentication", () => {
       });
 
       try {
-        mockValidTokenWithPhone(inactiveUser.phone);
+        const token = createTestToken(
+          createTokenPayload(inactiveUser.id, inactiveUser.employeeId, inactiveUser.orgId, inactiveUser.branchId, "staff")
+        );
 
         const response = await request(app.server)
-          .get("/me")
-          .set({ Authorization: "Bearer valid-token-inactive-user" });
+          .get("/api/v1/auth/me")
+          .set({ Authorization: `Bearer ${token}` });
         const body = response.body as ApiErrorResponse;
 
         expect(response.status).toBe(403);
@@ -170,21 +139,6 @@ describe("Authentication", () => {
         await prisma.user.delete({ where: { id: inactiveUser.id } });
       }
     });
-
-    // Note: "no branch assigned" test is skipped because branchId is required in schema
-    // The auth middleware has a defensive check but the DB constraint prevents this scenario
-
-    it("should lookup user by email if phone is not in token", async () => {
-      mockValidTokenWithEmail(TEST_USERS.admin.email);
-
-      const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token-email-lookup" });
-      const body = response.body as MeResponse;
-
-      expect(response.status).toBe(200);
-      expect(body.firstName).toBe(TEST_USERS.admin.firstName);
-    });
   });
 
   // ============================================
@@ -192,29 +146,33 @@ describe("Authentication", () => {
   // ============================================
   describe("Successful authentication", () => {
     it("should return 200 with valid token and active user", async () => {
-      mockValidTokenWithPhone(TEST_USERS.admin.phone);
+      const token = createTestToken(
+        createTokenPayload(testUsers.admin.id, testUsers.admin.employeeId, testUsers.admin.orgId, testUsers.admin.branchId, "admin")
+      );
 
       const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token" });
+        .get("/api/v1/auth/me")
+        .set({ Authorization: `Bearer ${token}` });
 
       expect(response.status).toBe(200);
     });
 
-    it("should return correct user info from GET /me", async () => {
-      mockValidTokenWithPhone(TEST_USERS.admin.phone);
+    it("should return correct user info from GET /auth/me", async () => {
+      const token = createTestToken(
+        createTokenPayload(testUsers.admin.id, testUsers.admin.employeeId, testUsers.admin.orgId, testUsers.admin.branchId, "admin")
+      );
 
       const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token" });
+        .get("/api/v1/auth/me")
+        .set({ Authorization: `Bearer ${token}` });
       const body = response.body as MeResponse;
 
       expect(response.status).toBe(200);
       expect(body).toMatchObject({
-        firstName: TEST_USERS.admin.firstName,
-        lastName: TEST_USERS.admin.lastName,
-        role: TEST_USERS.admin.role,
-        name: `${TEST_USERS.admin.firstName} ${TEST_USERS.admin.lastName}`,
+        firstName: "Rajesh",
+        lastName: "Kumar",
+        role: "admin",
+        name: "Rajesh Kumar",
       });
       expect(body.id).toBeDefined();
       expect(body.branchId).toBeDefined();
@@ -223,11 +181,13 @@ describe("Authentication", () => {
     });
 
     it("should return correct permissions for admin role", async () => {
-      mockValidTokenWithPhone(TEST_USERS.admin.phone);
+      const token = createTestToken(
+        createTokenPayload(testUsers.admin.id, testUsers.admin.employeeId, testUsers.admin.orgId, testUsers.admin.branchId, "admin")
+      );
 
       const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token" });
+        .get("/api/v1/auth/me")
+        .set({ Authorization: `Bearer ${token}` });
       const body = response.body as MeResponse;
 
       expect(response.status).toBe(200);
@@ -244,11 +204,13 @@ describe("Authentication", () => {
     });
 
     it("should return correct permissions for teacher role", async () => {
-      mockValidTokenWithPhone(TEST_USERS.teacher.phone);
+      const token = createTestToken(
+        createTokenPayload(testUsers.teacher.id, testUsers.teacher.employeeId, testUsers.teacher.orgId, testUsers.teacher.branchId, "teacher")
+      );
 
       const response = await request(app.server)
-        .get("/me")
-        .set({ Authorization: "Bearer valid-token" });
+        .get("/api/v1/auth/me")
+        .set({ Authorization: `Bearer ${token}` });
       const body = response.body as MeResponse;
 
       expect(response.status).toBe(200);
@@ -264,16 +226,76 @@ describe("Authentication", () => {
     });
 
     it("should allow authenticated user to access protected routes", async () => {
-      mockValidTokenWithPhone(TEST_USERS.admin.phone);
+      const token = createTestToken(
+        createTokenPayload(testUsers.admin.id, testUsers.admin.employeeId, testUsers.admin.orgId, testUsers.admin.branchId, "admin")
+      );
 
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set({ Authorization: "Bearer valid-token" });
+        .set({ Authorization: `Bearer ${token}` });
 
       // Should not be 401 (auth worked)
       expect(response.status).not.toBe(401);
       // Should be 200 (admin has STUDENT_VIEW)
       expect(response.status).toBe(200);
+    });
+  });
+
+  // ============================================
+  // Login Tests
+  // ============================================
+  describe("Login endpoint", () => {
+    it("should login successfully with valid credentials", async () => {
+      // Find an admin user with known credentials
+      const admin = await prisma.user.findFirst({
+        where: { email: "admin@abccoaching.com" },
+      });
+
+      // Update password to a known value for testing
+      await prisma.user.update({
+        where: { id: admin!.id },
+        data: { passwordHash: await hashPassword("TestPassword123") },
+      });
+
+      const response = await request(app.server)
+        .post("/api/v1/auth/login")
+        .send({
+          employeeId: admin!.employeeId,
+          password: "TestPassword123",
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.token).toBeDefined();
+      expect(response.body.user).toBeDefined();
+      expect(response.body.user.employeeId).toBe(admin!.employeeId);
+    });
+
+    it("should return 401 with invalid password", async () => {
+      const admin = await prisma.user.findFirst({
+        where: { email: "admin@abccoaching.com" },
+      });
+
+      const response = await request(app.server)
+        .post("/api/v1/auth/login")
+        .send({
+          employeeId: admin!.employeeId,
+          password: "WrongPassword123",
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe("Unauthorized");
+    });
+
+    it("should return 401 with non-existent employee ID", async () => {
+      const response = await request(app.server)
+        .post("/api/v1/auth/login")
+        .send({
+          employeeId: "NOTEXIST",
+          password: "Password123",
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe("Unauthorized");
     });
   });
 
@@ -287,8 +309,19 @@ describe("Authentication", () => {
 
       expect(response.status).toBe(200);
       expect(body.status).toBe("ok");
-      // Firebase mock should not be called for public routes
-      expect(mockVerifyIdToken).not.toHaveBeenCalled();
+    });
+
+    it("should allow access to /auth/login without authentication", async () => {
+      const response = await request(app.server)
+        .post("/api/v1/auth/login")
+        .send({
+          employeeId: "test",
+          password: "test",
+        });
+
+      // Should get 401 (invalid credentials) not 401 (missing token)
+      expect(response.status).toBe(401);
+      expect(response.body.message).toBe("Invalid employee ID or password");
     });
   });
 });

@@ -1,7 +1,17 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import { NotFoundError } from "../../utils/error-handler.js";
-import type { CreateBatchInput, UpdateBatchInput } from "./batches.schema.js";
+import {
+  type PaginationParams,
+  createPaginatedResponse,
+  calculateSkip,
+} from "../../utils/pagination.js";
+import type {
+  CreateBatchInput,
+  UpdateBatchInput,
+  BatchFilters,
+} from "./batches.schema.js";
 
 /**
  * Helper to format full name
@@ -11,46 +21,76 @@ function formatFullName(firstName: string, lastName: string): string {
 }
 
 /**
- * Get all batches for a branch
+ * Get batches for a branch with pagination
  */
-export async function getBatches(scope: TenantScope) {
-  const batches = await prisma.batch.findMany({
-    where: {
-      orgId: scope.orgId,
-      branchId: scope.branchId,
-    },
-    include: {
-      teacher: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-        },
-      },
-      _count: {
-        select: {
-          students: true,
-        },
-      },
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+export async function getBatches(
+  scope: TenantScope,
+  pagination: PaginationParams,
+  filters?: BatchFilters
+) {
+  // Build where clause with tenant scope and filters
+  const where: Prisma.BatchWhereInput = {
+    orgId: scope.orgId,
+    branchId: scope.branchId,
+  };
 
-  return batches.map((batch) => ({
+  // Add isActive filter
+  if (filters?.isActive !== undefined) {
+    where.isActive = filters.isActive;
+  }
+
+  // Add teacher filter
+  if (filters?.teacherId) {
+    where.teacherId = filters.teacherId;
+  }
+
+  // Add academic level filter
+  if (filters?.academicLevel) {
+    where.academicLevel = filters.academicLevel;
+  }
+
+  const [batches, total] = await Promise.all([
+    prisma.batch.findMany({
+      where,
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        _count: {
+          select: {
+            students: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.batch.count({ where }),
+  ]);
+
+  const formattedBatches = batches.map((batch) => ({
     ...batch,
     teacher: batch.teacher
       ? {
           id: batch.teacher.id,
           firstName: batch.teacher.firstName,
           lastName: batch.teacher.lastName,
-          fullName: formatFullName(batch.teacher.firstName, batch.teacher.lastName),
+          fullName: formatFullName(
+            batch.teacher.firstName,
+            batch.teacher.lastName
+          ),
         }
       : null,
     studentCount: batch._count.students,
     _count: undefined,
   }));
+
+  return createPaginatedResponse(formattedBatches, total, pagination);
 }
 
 /**

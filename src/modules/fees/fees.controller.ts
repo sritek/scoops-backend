@@ -1,29 +1,47 @@
 import type { FastifyReply } from "fastify";
 import type { ProtectedRequest } from "../../types/request.js";
 import { getTenantScopeFromRequest } from "../../middleware/branch.middleware.js";
+import { parsePaginationParams } from "../../utils/pagination.js";
 import {
   createFeePlanSchema,
   assignFeeSchema,
   recordPaymentSchema,
   studentIdParamSchema,
+  listFeePlansQuerySchema,
+  listPendingFeesQuerySchema,
 } from "./fees.schema.js";
 import * as feesService from "./fees.service.js";
 
 /**
  * GET /fees/plans
- * List all fee plans in the branch
+ * List fee plans with pagination
  */
 export async function listFeePlans(
   request: ProtectedRequest,
   reply: FastifyReply
 ) {
-  const scope = getTenantScopeFromRequest(request);
-  const plans = await feesService.getFeePlans(scope);
+  // Parse and validate query params
+  const query = listFeePlansQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
 
-  return reply.code(200).send({
-    data: plans,
-    count: plans.length,
+  const scope = getTenantScopeFromRequest(request);
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
   });
+  const filters = {
+    isActive: query.data.isActive,
+  };
+
+  const result = await feesService.getFeePlans(scope, pagination, filters);
+
+  return reply.code(200).send(result);
 }
 
 /**
@@ -54,19 +72,35 @@ export async function createFeePlan(
 
 /**
  * GET /fees/pending
- * Get all pending fees in the branch
+ * Get pending fees with pagination
  */
 export async function getPendingFees(
   request: ProtectedRequest,
   reply: FastifyReply
 ) {
-  const scope = getTenantScopeFromRequest(request);
-  const fees = await feesService.getPendingFees(scope);
+  // Parse and validate query params
+  const query = listPendingFeesQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
 
-  return reply.code(200).send({
-    data: fees,
-    count: fees.length,
+  const scope = getTenantScopeFromRequest(request);
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
   });
+  const filters = {
+    status: query.data.status,
+    studentId: query.data.studentId,
+  };
+
+  const result = await feesService.getPendingFees(scope, pagination, filters);
+
+  return reply.code(200).send(result);
 }
 
 /**

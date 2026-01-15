@@ -1,21 +1,12 @@
 import type { FastifyRequest } from "fastify";
-import type { AuthUser, UserContext } from "./auth.js";
-
-/**
- * Request with authenticated user (token verified).
- * Use this for routes that only need Firebase token verification.
- */
-export interface AuthenticatedRequest extends FastifyRequest {
-  authUser: AuthUser;
-}
+import type { UserContext } from "./auth.js";
 
 /**
  * Request with authenticated user AND full user context.
  * Use this for routes that need role, permissions, org/branch context.
- * Requires additional middleware to load user from DB.
+ * The auth middleware verifies JWT and loads user from DB.
  */
 export interface ProtectedRequest extends FastifyRequest {
-  authUser: AuthUser;
   userContext: UserContext;
 }
 

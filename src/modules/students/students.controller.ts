@@ -1,28 +1,49 @@
 import type { FastifyReply } from "fastify";
 import type { ProtectedRequest } from "../../types/request.js";
 import { getTenantScopeFromRequest } from "../../middleware/branch.middleware.js";
+import { parsePaginationParams } from "../../utils/pagination.js";
 import {
   createStudentSchema,
   updateStudentSchema,
   studentIdParamSchema,
+  listStudentsQuerySchema,
 } from "./students.schema.js";
 import * as studentsService from "./students.service.js";
 
 /**
  * GET /students
- * List all students in the branch
+ * List students with pagination and filters
  */
 export async function listStudents(
   request: ProtectedRequest,
   reply: FastifyReply
 ) {
-  const scope = getTenantScopeFromRequest(request);
-  const students = await studentsService.getStudents(scope);
+  // Parse and validate query params
+  const query = listStudentsQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
 
-  return reply.code(200).send({
-    data: students,
-    count: students.length,
+  const scope = getTenantScopeFromRequest(request);
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
   });
+  const filters = {
+    search: query.data.search,
+    status: query.data.status,
+    batchId: query.data.batchId,
+    gender: query.data.gender,
+    category: query.data.category,
+  };
+
+  const result = await studentsService.getStudents(scope, pagination, filters);
+
+  return reply.code(200).send(result);
 }
 
 /**
@@ -155,7 +176,10 @@ export async function deleteStudent(
   }
 
   const scope = getTenantScopeFromRequest(request);
-  const student = await studentsService.deactivateStudent(params.data.id, scope);
+  const student = await studentsService.deactivateStudent(
+    params.data.id,
+    scope
+  );
 
   if (!student) {
     return reply.code(404).send({

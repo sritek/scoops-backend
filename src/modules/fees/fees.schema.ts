@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../utils/pagination.js";
 
 /**
  * Fee frequency enum
@@ -63,8 +64,47 @@ export const studentIdParamSchema = z.object({
 });
 
 /**
+ * Schema for listing pending fees with pagination and filters
+ */
+export const listPendingFeesQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(["pending", "partial"]).optional(),
+  studentId: z.string().uuid().optional(),
+});
+
+/**
+ * Schema for listing fee plans with pagination
+ */
+export const listFeePlansQuerySchema = paginationQuerySchema.extend({
+  isActive: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (val === "true") return true;
+      if (val === "false") return false;
+      return undefined;
+    }),
+});
+
+/**
  * Type definitions
  */
 export type CreateFeePlanInput = z.infer<typeof createFeePlanSchema>;
 export type AssignFeeInput = z.infer<typeof assignFeeSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+export type ListPendingFeesQuery = z.infer<typeof listPendingFeesQuerySchema>;
+export type ListFeePlansQuery = z.infer<typeof listFeePlansQuerySchema>;
+
+/**
+ * Pending fees filters for service layer
+ */
+export interface PendingFeesFilters {
+  status?: "pending" | "partial";
+  studentId?: string;
+}
+
+/**
+ * Fee plans filters for service layer
+ */
+export interface FeePlansFilters {
+  isActive?: boolean;
+}

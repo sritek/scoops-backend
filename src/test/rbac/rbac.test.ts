@@ -61,7 +61,7 @@ describe("RBAC Enforcement", () => {
     it("should reject teacher from viewing pending fees (403)", async () => {
       const response = await request(app.server)
         .get("/api/v1/fees/pending")
-        .set(getAuthHeaders(USERS.teacher1.email));
+        .set(await getAuthHeaders(USERS.teacher1.email));
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(403);
@@ -71,7 +71,7 @@ describe("RBAC Enforcement", () => {
     it("should reject teacher from recording payment (403)", async () => {
       const response = await request(app.server)
         .post("/api/v1/fees/payment")
-        .set(getAuthHeaders(USERS.teacher1.email))
+        .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
           studentFeeId,
           amount: 1000,
@@ -86,7 +86,7 @@ describe("RBAC Enforcement", () => {
     it("should reject teacher from creating fee plan (403)", async () => {
       const response = await request(app.server)
         .post("/api/v1/fees/plan")
-        .set(getAuthHeaders(USERS.teacher1.email))
+        .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
           name: "Test Fee Plan",
           amount: 5000,
@@ -101,7 +101,7 @@ describe("RBAC Enforcement", () => {
     it("should allow teacher to view students (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.teacher1.email));
+        .set(await getAuthHeaders(USERS.teacher1.email));
 
       expect(response.status).toBe(200);
     });
@@ -128,7 +128,7 @@ describe("RBAC Enforcement", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.teacher1.email))
+        .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
           batchId: batch.id,
           date: today,
@@ -152,7 +152,7 @@ describe("RBAC Enforcement", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.accounts.email))
+        .set(await getAuthHeaders(USERS.accounts.email))
         .send({
           batchId,
           date: today,
@@ -172,7 +172,7 @@ describe("RBAC Enforcement", () => {
     it("should allow accounts to view students (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.accounts.email));
+        .set(await getAuthHeaders(USERS.accounts.email));
 
       expect(response.status).toBe(200);
     });
@@ -180,7 +180,7 @@ describe("RBAC Enforcement", () => {
     it("should allow accounts to view pending fees (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/fees/pending")
-        .set(getAuthHeaders(USERS.accounts.email));
+        .set(await getAuthHeaders(USERS.accounts.email));
 
       expect(response.status).toBe(200);
     });
@@ -205,7 +205,7 @@ describe("RBAC Enforcement", () => {
 
       const response = await request(app.server)
         .post("/api/v1/fees/payment")
-        .set(getAuthHeaders(USERS.accounts.email))
+        .set(await getAuthHeaders(USERS.accounts.email))
         .send({
           studentFeeId: pendingFee.id,
           amount: 100,
@@ -223,7 +223,7 @@ describe("RBAC Enforcement", () => {
     it("should reject staff from creating student (403)", async () => {
       const response = await request(app.server)
         .post("/api/v1/students")
-        .set(getAuthHeaders(USERS.staff.email))
+        .set(await getAuthHeaders(USERS.staff.email))
         .send({
           firstName: "New",
           lastName: "Student",
@@ -248,7 +248,7 @@ describe("RBAC Enforcement", () => {
     it("should reject staff from updating student (403)", async () => {
       const response = await request(app.server)
         .put(`/api/v1/students/${studentId}`)
-        .set(getAuthHeaders(USERS.staff.email))
+        .set(await getAuthHeaders(USERS.staff.email))
         .send({
           firstName: "Updated",
         });
@@ -261,7 +261,7 @@ describe("RBAC Enforcement", () => {
     it("should reject staff from deactivating student (403)", async () => {
       const response = await request(app.server)
         .delete(`/api/v1/students/${studentId}`)
-        .set(getAuthHeaders(USERS.staff.email));
+        .set(await getAuthHeaders(USERS.staff.email));
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(403);
@@ -271,7 +271,7 @@ describe("RBAC Enforcement", () => {
     it("should reject staff from creating batch (403)", async () => {
       const response = await request(app.server)
         .post("/api/v1/batches")
-        .set(getAuthHeaders(USERS.staff.email))
+        .set(await getAuthHeaders(USERS.staff.email))
         .send({
           name: "New Batch",
           academicLevel: "secondary",
@@ -288,7 +288,7 @@ describe("RBAC Enforcement", () => {
 
       const response = await request(app.server)
         .post("/api/v1/attendance/mark")
-        .set(getAuthHeaders(USERS.staff.email))
+        .set(await getAuthHeaders(USERS.staff.email))
         .send({
           batchId,
           date: today,
@@ -308,7 +308,7 @@ describe("RBAC Enforcement", () => {
     it("should reject staff from accessing fees (403)", async () => {
       const response = await request(app.server)
         .get("/api/v1/fees/pending")
-        .set(getAuthHeaders(USERS.staff.email));
+        .set(await getAuthHeaders(USERS.staff.email));
       const body = response.body as ApiErrorResponse;
 
       expect(response.status).toBe(403);
@@ -318,7 +318,7 @@ describe("RBAC Enforcement", () => {
     it("should allow staff to view students (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.staff.email));
+        .set(await getAuthHeaders(USERS.staff.email));
 
       expect(response.status).toBe(200);
     });
@@ -326,7 +326,7 @@ describe("RBAC Enforcement", () => {
     it("should allow staff to view batches (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/batches")
-        .set(getAuthHeaders(USERS.staff.email));
+        .set(await getAuthHeaders(USERS.staff.email));
 
       expect(response.status).toBe(200);
     });
@@ -334,7 +334,7 @@ describe("RBAC Enforcement", () => {
     it("should allow staff to view dashboard (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(USERS.staff.email));
+        .set(await getAuthHeaders(USERS.staff.email));
 
       expect(response.status).toBe(200);
     });
@@ -347,7 +347,7 @@ describe("RBAC Enforcement", () => {
     it("should allow admin to view students (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/students")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -355,7 +355,7 @@ describe("RBAC Enforcement", () => {
     it("should allow admin to view batches (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/batches")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -363,7 +363,7 @@ describe("RBAC Enforcement", () => {
     it("should allow admin to view pending fees (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/fees/pending")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -373,7 +373,7 @@ describe("RBAC Enforcement", () => {
 
       const response = await request(app.server)
         .get(`/api/v1/attendance?batchId=${batchId}&date=${today}`)
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -381,7 +381,7 @@ describe("RBAC Enforcement", () => {
     it("should allow admin to view dashboard (200)", async () => {
       const response = await request(app.server)
         .get("/api/v1/dashboard")
-        .set(getAuthHeaders(USERS.admin.email));
+        .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);
     });
@@ -389,7 +389,7 @@ describe("RBAC Enforcement", () => {
     it("should allow admin to create batch (201)", async () => {
       const response = await request(app.server)
         .post("/api/v1/batches")
-        .set(getAuthHeaders(USERS.admin.email))
+        .set(await getAuthHeaders(USERS.admin.email))
         .send({
           name: "Admin Test Batch",
           academicLevel: "secondary",

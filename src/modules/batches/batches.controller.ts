@@ -1,28 +1,47 @@
 import type { FastifyReply } from "fastify";
 import type { ProtectedRequest } from "../../types/request.js";
 import { getTenantScopeFromRequest } from "../../middleware/branch.middleware.js";
+import { parsePaginationParams } from "../../utils/pagination.js";
 import {
   createBatchSchema,
   updateBatchSchema,
   batchIdParamSchema,
+  listBatchesQuerySchema,
 } from "./batches.schema.js";
 import * as batchesService from "./batches.service.js";
 
 /**
  * GET /batches
- * List all batches in the branch
+ * List batches with pagination and filters
  */
 export async function listBatches(
   request: ProtectedRequest,
   reply: FastifyReply
 ) {
-  const scope = getTenantScopeFromRequest(request);
-  const batches = await batchesService.getBatches(scope);
+  // Parse and validate query params
+  const query = listBatchesQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
 
-  return reply.code(200).send({
-    data: batches,
-    count: batches.length,
+  const scope = getTenantScopeFromRequest(request);
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
   });
+  const filters = {
+    isActive: query.data.isActive,
+    teacherId: query.data.teacherId,
+    academicLevel: query.data.academicLevel,
+  };
+
+  const result = await batchesService.getBatches(scope, pagination, filters);
+
+  return reply.code(200).send(result);
 }
 
 /**

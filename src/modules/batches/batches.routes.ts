@@ -2,6 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { branchContextMiddleware } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
 import { PERMISSIONS } from "../../config/permissions.js";
+import {
+  paginationQueryOpenApi,
+  paginationResponseOpenApi,
+} from "../../utils/pagination.js";
 import * as controller from "./batches.controller.js";
 
 /**
@@ -11,7 +15,7 @@ import * as controller from "./batches.controller.js";
 export async function batchesRoutes(app: FastifyInstance) {
   /**
    * GET /batches
-   * List all batches in the branch
+   * List batches with pagination and filters
    * Requires: STUDENT_VIEW (batches are needed for attendance/student context)
    */
   app.get(
@@ -19,9 +23,43 @@ export async function batchesRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["Batches"],
-        summary: "List all batches",
-        description: "Returns all batches in the current branch with teacher info and student count",
+        summary: "List batches",
+        description:
+          "Returns paginated batches in the current branch with teacher info and student count",
         security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQueryOpenApi.properties,
+            isActive: {
+              type: "boolean",
+              description: "Filter by active status",
+            },
+            teacherId: {
+              type: "string",
+              format: "uuid",
+              description: "Filter by teacher ID",
+            },
+            academicLevel: {
+              type: "string",
+              enum: ["primary", "secondary", "senior_secondary", "coaching"],
+              description: "Filter by academic level",
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+                description: "Array of batches",
+              },
+              pagination: paginationResponseOpenApi,
+            },
+          },
+        },
       },
       preHandler: [
         branchContextMiddleware,
@@ -42,7 +80,8 @@ export async function batchesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Batches"],
         summary: "Get batch by ID",
-        description: "Returns a single batch with teacher info and student count",
+        description:
+          "Returns a single batch with teacher info and student count",
         security: [{ bearerAuth: [] }],
         params: {
           type: "object",
@@ -71,7 +110,8 @@ export async function batchesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Batches"],
         summary: "Create a new batch",
-        description: "Creates a new batch/class with optional teacher assignment",
+        description:
+          "Creates a new batch/class with optional teacher assignment",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -124,7 +164,11 @@ export async function batchesRoutes(app: FastifyInstance) {
               type: "string",
               enum: ["primary", "secondary", "senior_secondary", "coaching"],
             },
-            stream: { type: "string", enum: ["science", "commerce", "arts"], nullable: true },
+            stream: {
+              type: "string",
+              enum: ["science", "commerce", "arts"],
+              nullable: true,
+            },
             teacherId: { type: "string", format: "uuid", nullable: true },
             isActive: { type: "boolean" },
           },

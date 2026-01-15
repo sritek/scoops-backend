@@ -1,22 +1,4 @@
 /**
- * Authenticated user from token (before DB lookup)
- */
-export interface AuthUser {
-  id: string;
-  email: string | null;
-  phone: string | null;
-}
-
-/**
- * Decoded token payload from auth provider
- */
-export interface DecodedToken {
-  uid: string;
-  email?: string;
-  phone_number?: string;
-}
-
-/**
  * User roles (fixed in Phase 1)
  */
 export type Role = 'admin' | 'teacher' | 'accounts' | 'staff';

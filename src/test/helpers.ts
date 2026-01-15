@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import jwt from "jsonwebtoken";
 import { buildApp } from "../app.js";
+import { env } from "../config/env.js";
+import type { Role } from "../types/auth.js";
+import { prisma } from "./setup.js";
 
 /**
  * Build a Fastify app instance for testing
@@ -10,22 +14,25 @@ export async function buildTestApp(): Promise<FastifyInstance> {
 }
 
 /**
- * Create a mock JWT token for testing
- * This matches the format expected by auth.middleware.ts
+ * JWT payload for test tokens
  */
-export function createTestToken(email: string): string {
-  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64");
-  const payload = Buffer.from(
-    JSON.stringify({
-      uid: `test-uid-${email}`,
-      email: email,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    })
-  ).toString("base64");
-  const signature = Buffer.from("test-signature").toString("base64");
+export interface TestJwtPayload {
+  userId: string;
+  employeeId: string;
+  orgId: string;
+  branchId: string;
+  role: Role;
+}
 
-  return `${header}.${payload}.${signature}`;
+/**
+ * Create a mock JWT token for testing
+ * This creates a properly signed JWT that the auth middleware will accept
+ */
+export function createTestToken(payload: TestJwtPayload): string {
+  const options: jwt.SignOptions = {
+    expiresIn: "1h",
+  };
+  return jwt.sign(payload, env.JWT_SECRET, options);
 }
 
 /**
@@ -36,8 +43,59 @@ export function authHeader(token: string): { Authorization: string } {
 }
 
 /**
- * Create headers for authenticated requests
+ * Create headers for authenticated requests using a token payload
  */
-export function getAuthHeaders(email: string): { Authorization: string } {
-  return authHeader(createTestToken(email));
+export function getAuthHeadersFromPayload(payload: TestJwtPayload): { Authorization: string } {
+  return authHeader(createTestToken(payload));
+}
+
+/**
+ * Create headers for authenticated requests by looking up user by email
+ * This is the legacy interface for backward compatibility with existing tests
+ */
+export async function getAuthHeaders(email: string): Promise<{ Authorization: string }> {
+  const user = await prisma.user.findFirst({
+    where: { email },
+    select: {
+      id: true,
+      employeeId: true,
+      orgId: true,
+      branchId: true,
+      role: true,
+    },
+  });
+
+  if (!user) {
+    throw new Error(`Test user not found with email: ${email}`);
+  }
+
+  const payload: TestJwtPayload = {
+    userId: user.id,
+    employeeId: user.employeeId,
+    orgId: user.orgId,
+    branchId: user.branchId,
+    role: user.role as Role,
+  };
+
+  return authHeader(createTestToken(payload));
+}
+
+/**
+ * Create test token payload for a specific user
+ * This is a helper to create token payloads from test fixtures
+ */
+export function createTokenPayload(
+  userId: string,
+  employeeId: string,
+  orgId: string,
+  branchId: string,
+  role: Role
+): TestJwtPayload {
+  return {
+    userId,
+    employeeId,
+    orgId,
+    branchId,
+    role,
+  };
 }

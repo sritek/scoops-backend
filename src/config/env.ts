@@ -57,13 +57,20 @@ const envSchema = z.object({
       return val.split(",").map((origin) => origin.trim());
     }),
 
-  // Firebase configuration
-  // Path to Firebase service account JSON file
-  GOOGLE_APPLICATION_CREDENTIALS: z
+  // JWT configuration
+  JWT_SECRET: z
     .string({
-      required_error: "GOOGLE_APPLICATION_CREDENTIALS is required",
+      required_error: "JWT_SECRET is required",
     })
-    .min(1, "GOOGLE_APPLICATION_CREDENTIALS cannot be empty"),
+    .min(32, "JWT_SECRET must be at least 32 characters for security"),
+
+  JWT_EXPIRES_IN: z
+    .string()
+    .default("7d")
+    .refine(
+      (val) => /^\d+[smhd]$/.test(val),
+      "JWT_EXPIRES_IN must be a valid duration (e.g., '7d', '24h', '60m')"
+    ),
 });
 
 /**

@@ -1,11 +1,19 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import { NotFoundError, BadRequestError } from "../../utils/error-handler.js";
+import {
+  type PaginationParams,
+  createPaginatedResponse,
+  calculateSkip,
+} from "../../utils/pagination.js";
 import { emitEvent, EVENT_TYPES } from "../events/index.js";
 import type {
   CreateFeePlanInput,
   AssignFeeInput,
   RecordPaymentInput,
+  PendingFeesFilters,
+  FeePlansFilters,
 } from "./fees.schema.js";
 
 /**
@@ -16,19 +24,36 @@ function formatFullName(firstName: string, lastName: string): string {
 }
 
 /**
- * Get all fee plans for a branch
+ * Get fee plans for a branch with pagination
  */
-export async function getFeePlans(scope: TenantScope) {
-  return prisma.feePlan.findMany({
-    where: {
-      orgId: scope.orgId,
-      branchId: scope.branchId,
-      isActive: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+export async function getFeePlans(
+  scope: TenantScope,
+  pagination: PaginationParams,
+  filters?: FeePlansFilters
+) {
+  const where: Prisma.FeePlanWhereInput = {
+    orgId: scope.orgId,
+    branchId: scope.branchId,
+  };
+
+  // Add isActive filter (defaults to true if not specified)
+  if (filters?.isActive !== undefined) {
+    where.isActive = filters.isActive;
+  } else {
+    where.isActive = true; // Default to showing only active fee plans
+  }
+
+  const [feePlans, total] = await Promise.all([
+    prisma.feePlan.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.feePlan.count({ where }),
+  ]);
+
+  return createPaginatedResponse(feePlans, total, pagination);
 }
 
 /**
@@ -50,40 +75,59 @@ export async function createFeePlan(
 }
 
 /**
- * Get pending fees for a branch
+ * Get pending fees for a branch with pagination
  */
-export async function getPendingFees(scope: TenantScope) {
-  const fees = await prisma.studentFee.findMany({
-    where: {
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-      },
-      status: {
-        in: ["pending", "partial"],
-      },
+export async function getPendingFees(
+  scope: TenantScope,
+  pagination: PaginationParams,
+  filters?: PendingFeesFilters
+) {
+  // Build where clause
+  const where: Prisma.StudentFeeWhereInput = {
+    student: {
+      orgId: scope.orgId,
+      branchId: scope.branchId,
     },
-    include: {
-      student: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-        },
-      },
-      feePlan: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
-    },
-    orderBy: {
-      dueDate: "asc",
-    },
-  });
+  };
 
-  return fees.map((fee) => ({
+  // Add status filter (defaults to pending and partial)
+  if (filters?.status) {
+    where.status = filters.status;
+  } else {
+    where.status = { in: ["pending", "partial"] };
+  }
+
+  // Add student filter
+  if (filters?.studentId) {
+    where.studentId = filters.studentId;
+  }
+
+  const [fees, total] = await Promise.all([
+    prisma.studentFee.findMany({
+      where,
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        feePlan: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { dueDate: "asc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.studentFee.count({ where }),
+  ]);
+
+  const formattedFees = fees.map((fee) => ({
     id: fee.id,
     student: {
       id: fee.student.id,
@@ -98,6 +142,8 @@ export async function getPendingFees(scope: TenantScope) {
     pendingAmount: fee.totalAmount - fee.paidAmount,
     status: fee.status,
   }));
+
+  return createPaginatedResponse(formattedFees, total, pagination);
 }
 
 /**

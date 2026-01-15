@@ -82,4 +82,81 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
     controller.markAttendance
   );
+
+  /**
+   * GET /attendance/history
+   * Get attendance history with pagination and filters
+   * Requires: ATTENDANCE_MARK
+   */
+  app.get(
+    "/history",
+    {
+      schema: {
+        tags: ["Attendance"],
+        summary: "Get attendance history",
+        description: "Returns paginated list of attendance sessions with stats. Supports filtering by batch and date range.",
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            batchId: { type: "string", format: "uuid", description: "Filter by batch ID" },
+            startDate: { type: "string", format: "date", description: "Start date (YYYY-MM-DD)" },
+            endDate: { type: "string", format: "date", description: "End date (YYYY-MM-DD)" },
+            page: { type: "number", minimum: 1, default: 1 },
+            limit: { type: "number", minimum: 1, maximum: 100, default: 20 },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    date: { type: "string" },
+                    batchId: { type: "string" },
+                    batchName: { type: "string" },
+                    createdBy: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                      },
+                    },
+                    createdAt: { type: "string" },
+                    stats: {
+                      type: "object",
+                      properties: {
+                        present: { type: "number" },
+                        absent: { type: "number" },
+                        total: { type: "number" },
+                        attendanceRate: { type: "number" },
+                      },
+                    },
+                  },
+                },
+              },
+              pagination: {
+                type: "object",
+                properties: {
+                  page: { type: "number" },
+                  limit: { type: "number" },
+                  total: { type: "number" },
+                  totalPages: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.ATTENDANCE_MARK),
+      ],
+    },
+    controller.getAttendanceHistory
+  );
 }

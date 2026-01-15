@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "../../utils/pagination.js";
 
 /**
  * Academic level enum
@@ -49,8 +50,36 @@ export const batchIdParamSchema = z.object({
 });
 
 /**
+ * Schema for listing batches with pagination and filters
+ */
+export const listBatchesQuerySchema = paginationQuerySchema.extend({
+  isActive: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (val === "true") return true;
+      if (val === "false") return false;
+      return undefined;
+    }),
+  teacherId: z.string().uuid().optional(),
+  academicLevel: z
+    .enum(["primary", "secondary", "senior_secondary", "coaching"])
+    .optional(),
+});
+
+/**
  * Type definitions
  */
 export type CreateBatchInput = z.infer<typeof createBatchSchema>;
 export type UpdateBatchInput = z.infer<typeof updateBatchSchema>;
 export type BatchIdParam = z.infer<typeof batchIdParamSchema>;
+export type ListBatchesQuery = z.infer<typeof listBatchesQuerySchema>;
+
+/**
+ * Batch filters for service layer
+ */
+export interface BatchFilters {
+  isActive?: boolean;
+  teacherId?: string;
+  academicLevel?: string;
+}

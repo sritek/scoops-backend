@@ -2,6 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { branchContextMiddleware } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
 import { PERMISSIONS } from "../../config/permissions.js";
+import {
+  paginationQueryOpenApi,
+  paginationResponseOpenApi,
+} from "../../utils/pagination.js";
 import * as controller from "./fees.controller.js";
 
 /**
@@ -11,7 +15,7 @@ import * as controller from "./fees.controller.js";
 export async function feesRoutes(app: FastifyInstance) {
   /**
    * GET /fees/plans
-   * List all fee plans in the branch
+   * List fee plans with pagination
    * Requires: FEE_VIEW
    */
   app.get(
@@ -19,9 +23,32 @@ export async function feesRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["Fees"],
-        summary: "List all fee plans",
-        description: "Returns all active fee plans in the current branch",
+        summary: "List fee plans",
+        description: "Returns paginated fee plans in the current branch",
         security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQueryOpenApi.properties,
+            isActive: {
+              type: "boolean",
+              description: "Filter by active status (defaults to true)",
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+                description: "Array of fee plans",
+              },
+              pagination: paginationResponseOpenApi,
+            },
+          },
+        },
       },
       preHandler: [
         branchContextMiddleware,
@@ -64,7 +91,7 @@ export async function feesRoutes(app: FastifyInstance) {
 
   /**
    * GET /fees/pending
-   * Get all pending fees in the branch
+   * Get pending fees with pagination
    * Requires: FEE_VIEW
    */
   app.get(
@@ -73,8 +100,38 @@ export async function feesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Fees"],
         summary: "List pending fees",
-        description: "Returns all pending and partial fees in the current branch",
+        description:
+          "Returns paginated pending and partial fees in the current branch",
         security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQueryOpenApi.properties,
+            status: {
+              type: "string",
+              enum: ["pending", "partial"],
+              description: "Filter by fee status",
+            },
+            studentId: {
+              type: "string",
+              format: "uuid",
+              description: "Filter by student ID",
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+                description: "Array of pending fees",
+              },
+              pagination: paginationResponseOpenApi,
+            },
+          },
+        },
       },
       preHandler: [
         branchContextMiddleware,
@@ -95,12 +152,17 @@ export async function feesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Fees"],
         summary: "Get student fees",
-        description: "Returns all fees and payment history for a specific student",
+        description:
+          "Returns all fees and payment history for a specific student",
         security: [{ bearerAuth: [] }],
         params: {
           type: "object",
           properties: {
-            studentId: { type: "string", format: "uuid", description: "Student ID" },
+            studentId: {
+              type: "string",
+              format: "uuid",
+              description: "Student ID",
+            },
           },
           required: ["studentId"],
         },
@@ -132,8 +194,16 @@ export async function feesRoutes(app: FastifyInstance) {
           properties: {
             studentId: { type: "string", format: "uuid" },
             feePlanId: { type: "string", format: "uuid" },
-            dueDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Due date in YYYY-MM-DD format" },
-            totalAmount: { type: "integer", minimum: 1, description: "Optional override of fee plan amount" },
+            dueDate: {
+              type: "string",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+              description: "Due date in YYYY-MM-DD format",
+            },
+            totalAmount: {
+              type: "integer",
+              minimum: 1,
+              description: "Optional override of fee plan amount",
+            },
           },
         },
       },
@@ -156,7 +226,8 @@ export async function feesRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Fees"],
         summary: "Record a payment",
-        description: "Records a payment for a student fee. Partial payments are allowed. Amount cannot exceed pending amount.",
+        description:
+          "Records a payment for a student fee. Partial payments are allowed. Amount cannot exceed pending amount.",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",

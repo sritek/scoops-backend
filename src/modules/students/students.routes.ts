@@ -2,6 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { branchContextMiddleware } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
 import { PERMISSIONS } from "../../config/permissions.js";
+import {
+  paginationQueryOpenApi,
+  paginationResponseOpenApi,
+} from "../../utils/pagination.js";
 import * as controller from "./students.controller.js";
 
 /**
@@ -11,7 +15,7 @@ import * as controller from "./students.controller.js";
 export async function studentsRoutes(app: FastifyInstance) {
   /**
    * GET /students
-   * List all students in the branch
+   * List students with pagination and filters
    * Requires: STUDENT_VIEW
    */
   app.get(
@@ -19,9 +23,53 @@ export async function studentsRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["Students"],
-        summary: "List all students",
-        description: "Returns all students in the current branch with their parents",
+        summary: "List students",
+        description:
+          "Returns paginated students in the current branch with their parents. Supports search and filtering.",
         security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQueryOpenApi.properties,
+            search: {
+              type: "string",
+              description: "Search by first name or last name",
+            },
+            status: {
+              type: "string",
+              enum: ["active", "inactive"],
+              description: "Filter by status",
+            },
+            batchId: {
+              type: "string",
+              format: "uuid",
+              description: "Filter by batch ID",
+            },
+            gender: {
+              type: "string",
+              enum: ["male", "female", "other"],
+              description: "Filter by gender",
+            },
+            category: {
+              type: "string",
+              enum: ["gen", "sc", "st", "obc", "minority"],
+              description: "Filter by category",
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+                description: "Array of students",
+              },
+              pagination: paginationResponseOpenApi,
+            },
+          },
+        },
       },
       preHandler: [
         branchContextMiddleware,
@@ -81,8 +129,16 @@ export async function studentsRoutes(app: FastifyInstance) {
             lastName: { type: "string", minLength: 1, maxLength: 255 },
             gender: { type: "string", enum: ["male", "female", "other"] },
             dob: { type: "string", format: "date-time" },
-            category: { type: "string", enum: ["gen", "sc", "st", "obc", "minority"] },
+            category: {
+              type: "string",
+              enum: ["gen", "sc", "st", "obc", "minority"],
+            },
             isCwsn: { type: "boolean", default: false },
+            photoUrl: {
+              type: "string",
+              description: "Base64 encoded photo (jpeg, png, or webp)",
+              nullable: true,
+            },
             admissionYear: { type: "integer", minimum: 2000, maximum: 2100 },
             batchId: { type: "string", format: "uuid" },
             parents: {
@@ -94,7 +150,15 @@ export async function studentsRoutes(app: FastifyInstance) {
                   firstName: { type: "string" },
                   lastName: { type: "string" },
                   phone: { type: "string", minLength: 10, maxLength: 15 },
-                  relation: { type: "string", enum: ["father", "mother", "guardian", "other"] },
+                  relation: {
+                    type: "string",
+                    enum: ["father", "mother", "guardian", "other"],
+                  },
+                  photoUrl: {
+                    type: "string",
+                    description: "Base64 encoded photo for parent",
+                    nullable: true,
+                  },
                 },
               },
             },
@@ -135,9 +199,17 @@ export async function studentsRoutes(app: FastifyInstance) {
             firstName: { type: "string", minLength: 1, maxLength: 255 },
             lastName: { type: "string", minLength: 1, maxLength: 255 },
             gender: { type: "string", enum: ["male", "female", "other"] },
-            dob: { type: "string", format: "date-time" },
-            category: { type: "string", enum: ["gen", "sc", "st", "obc", "minority"] },
+            dob: { type: "string", format: "date" },
+            category: {
+              type: "string",
+              enum: ["gen", "sc", "st", "obc", "minority"],
+            },
             isCwsn: { type: "boolean" },
+            photoUrl: {
+              type: "string",
+              description: "Base64 encoded photo (jpeg, png, or webp)",
+              nullable: true,
+            },
             admissionYear: { type: "integer", minimum: 2000, maximum: 2100 },
             batchId: { type: "string", format: "uuid", nullable: true },
             status: { type: "string", enum: ["active", "inactive"] },
@@ -150,7 +222,15 @@ export async function studentsRoutes(app: FastifyInstance) {
                   firstName: { type: "string" },
                   lastName: { type: "string" },
                   phone: { type: "string", minLength: 10, maxLength: 15 },
-                  relation: { type: "string", enum: ["father", "mother", "guardian", "other"] },
+                  relation: {
+                    type: "string",
+                    enum: ["father", "mother", "guardian", "other"],
+                  },
+                  photoUrl: {
+                    type: "string",
+                    description: "Base64 encoded photo for parent",
+                    nullable: true,
+                  },
                 },
               },
             },
