@@ -32,13 +32,14 @@ export async function batchesRoutes(app: FastifyInstance) {
           properties: {
             ...paginationQueryOpenApi.properties,
             isActive: {
-              type: "boolean",
+              type: "string",
+              enum: ["true", "false"],
               description: "Filter by active status",
             },
             teacherId: {
               type: "string",
               format: "uuid",
-              description: "Filter by teacher ID",
+              description: "Filter by class teacher ID",
             },
             academicLevel: {
               type: "string",
@@ -67,6 +68,43 @@ export async function batchesRoutes(app: FastifyInstance) {
       ],
     },
     controller.listBatches
+  );
+
+  /**
+   * POST /batches/generate-name
+   * Generate a batch name based on parameters
+   * Requires: STUDENT_EDIT
+   */
+  app.post(
+    "/generate-name",
+    {
+      schema: {
+        tags: ["Batches"],
+        summary: "Generate batch name",
+        description: "Auto-generates a batch name based on level, stream, and session",
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: "object",
+          required: ["academicLevel"],
+          properties: {
+            academicLevel: {
+              type: "string",
+              enum: ["primary", "secondary", "senior_secondary", "coaching"],
+            },
+            stream: {
+              type: "string",
+              enum: ["science", "commerce", "arts"],
+            },
+            sessionName: { type: "string" },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.STUDENT_EDIT),
+      ],
+    },
+    controller.generateBatchName
   );
 
   /**
@@ -111,7 +149,7 @@ export async function batchesRoutes(app: FastifyInstance) {
         tags: ["Batches"],
         summary: "Create a new batch",
         description:
-          "Creates a new batch/class with optional teacher assignment",
+          "Creates a new batch/class with optional teacher and session assignment",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -123,7 +161,8 @@ export async function batchesRoutes(app: FastifyInstance) {
               enum: ["primary", "secondary", "senior_secondary", "coaching"],
             },
             stream: { type: "string", enum: ["science", "commerce", "arts"] },
-            teacherId: { type: "string", format: "uuid" },
+            classTeacherId: { type: "string", format: "uuid" },
+            sessionId: { type: "string", format: "uuid" },
             isActive: { type: "boolean", default: true },
           },
         },
@@ -169,7 +208,8 @@ export async function batchesRoutes(app: FastifyInstance) {
               enum: ["science", "commerce", "arts"],
               nullable: true,
             },
-            teacherId: { type: "string", format: "uuid", nullable: true },
+            classTeacherId: { type: "string", format: "uuid", nullable: true },
+            sessionId: { type: "string", format: "uuid", nullable: true },
             isActive: { type: "boolean" },
           },
         },
@@ -180,5 +220,162 @@ export async function batchesRoutes(app: FastifyInstance) {
       ],
     },
     controller.updateBatch
+  );
+
+  // ===========================
+  // SCHEDULE ROUTES
+  // ===========================
+
+  /**
+   * GET /batches/:id/schedule
+   * Get the schedule for a batch
+   * Requires: STUDENT_VIEW
+   */
+  app.get(
+    "/:id/schedule",
+    {
+      schema: {
+        tags: ["Batches"],
+        summary: "Get batch schedule",
+        description: "Returns the weekly schedule (periods) for a batch",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid", description: "Batch ID" },
+          },
+          required: ["id"],
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.STUDENT_VIEW),
+      ],
+    },
+    controller.getBatchSchedule
+  );
+
+  /**
+   * PUT /batches/:id/schedule
+   * Set the full schedule for a batch
+   * Requires: STUDENT_EDIT
+   */
+  app.put(
+    "/:id/schedule",
+    {
+      schema: {
+        tags: ["Batches"],
+        summary: "Set batch schedule",
+        description: "Sets the complete weekly schedule for a batch (replaces existing)",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid", description: "Batch ID" },
+          },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          required: ["periods"],
+          properties: {
+            periods: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["dayOfWeek", "periodNumber", "startTime", "endTime"],
+                properties: {
+                  dayOfWeek: { type: "integer", minimum: 1, maximum: 6 },
+                  periodNumber: { type: "integer", minimum: 1 },
+                  startTime: { type: "string", pattern: "^\\d{2}:\\d{2}$" },
+                  endTime: { type: "string", pattern: "^\\d{2}:\\d{2}$" },
+                  subjectId: { type: "string", format: "uuid" },
+                  teacherId: { type: "string", format: "uuid" },
+                },
+              },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.STUDENT_EDIT),
+      ],
+    },
+    controller.setBatchSchedule
+  );
+
+  /**
+   * PATCH /batches/:id/schedule/:day/:period
+   * Update a single period in the schedule
+   * Requires: STUDENT_EDIT
+   */
+  app.patch(
+    "/:id/schedule/:day/:period",
+    {
+      schema: {
+        tags: ["Batches"],
+        summary: "Update a single period",
+        description: "Updates the subject and/or teacher for a specific period",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid", description: "Batch ID" },
+            day: { type: "integer", minimum: 1, maximum: 6, description: "Day of week (1=Mon)" },
+            period: { type: "integer", minimum: 1, description: "Period number" },
+          },
+          required: ["id", "day", "period"],
+        },
+        body: {
+          type: "object",
+          properties: {
+            subjectId: { type: "string", format: "uuid", nullable: true },
+            teacherId: { type: "string", format: "uuid", nullable: true },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.STUDENT_EDIT),
+      ],
+    },
+    controller.updatePeriod
+  );
+
+  /**
+   * POST /batches/:id/schedule/initialize
+   * Initialize schedule from a period template
+   * Requires: STUDENT_EDIT
+   */
+  app.post(
+    "/:id/schedule/initialize",
+    {
+      schema: {
+        tags: ["Batches"],
+        summary: "Initialize schedule from template",
+        description: "Creates a schedule structure from a period template",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid", description: "Batch ID" },
+          },
+          required: ["id"],
+        },
+        body: {
+          type: "object",
+          required: ["templateId"],
+          properties: {
+            templateId: { type: "string", format: "uuid" },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.STUDENT_EDIT),
+      ],
+    },
+    controller.initializeSchedule
   );
 }

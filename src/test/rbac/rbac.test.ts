@@ -112,7 +112,7 @@ describe("RBAC Enforcement", () => {
       // First, get a batch the teacher is assigned to
       const batch = await prisma.batch.findFirst({
         where: {
-          teacher: {
+          classTeacher: {
             email: USERS.teacher1.email,
           },
         },
@@ -132,7 +132,7 @@ describe("RBAC Enforcement", () => {
         .send({
           batchId: batch.id,
           date: today,
-          records: batch.students.slice(0, 1).map((s) => ({
+          records: batch.students.slice(0, 1).map((s: { id: string }) => ({
             studentId: s.id,
             status: "present",
           })),

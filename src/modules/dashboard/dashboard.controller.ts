@@ -6,13 +6,23 @@ import * as dashboardService from "./dashboard.service.js";
 /**
  * GET /dashboard
  * Get complete dashboard summary
+ * Returns role-specific data:
+ * - Admin/Staff: Full dashboard (attendance + fees)
+ * - Teacher: Own batch attendance + own batch fees
+ * - Accounts: Fees only (no attendance)
  */
 export async function getDashboard(
   request: ProtectedRequest,
   reply: FastifyReply
 ) {
   const scope = getTenantScopeFromRequest(request);
-  const summary = await dashboardService.getDashboardSummary(scope);
+  const { userId, role } = request.userContext;
+  
+  const summary = await dashboardService.getRoleDashboardSummary(
+    role,
+    userId,
+    scope
+  );
 
   return reply.code(200).send({
     data: summary,
@@ -64,5 +74,28 @@ export async function getFeesCollectedToday(
 
   return reply.code(200).send({
     data: summary,
+  });
+}
+
+/**
+ * GET /dashboard/enhanced
+ * Get enhanced dashboard with action items, trends, and more
+ * Returns role-specific data with additional insights
+ */
+export async function getEnhancedDashboard(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const scope = getTenantScopeFromRequest(request);
+  const { userId, role } = request.userContext;
+
+  const dashboard = await dashboardService.getEnhancedDashboard(
+    role,
+    userId,
+    scope
+  );
+
+  return reply.code(200).send({
+    data: dashboard,
   });
 }

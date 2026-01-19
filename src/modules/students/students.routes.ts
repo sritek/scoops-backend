@@ -128,7 +128,7 @@ export async function studentsRoutes(app: FastifyInstance) {
             firstName: { type: "string", minLength: 1, maxLength: 255 },
             lastName: { type: "string", minLength: 1, maxLength: 255 },
             gender: { type: "string", enum: ["male", "female", "other"] },
-            dob: { type: "string", format: "date-time" },
+            dob: { type: "string", format: "date" },
             category: {
               type: "string",
               enum: ["gen", "sc", "st", "obc", "minority"],

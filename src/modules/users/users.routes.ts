@@ -37,7 +37,8 @@ export async function usersRoutes(app: FastifyInstance) {
               description: "Filter by role",
             },
             isActive: {
-              type: "boolean",
+              type: "string",
+              enum: ["true", "false"],
               description: "Filter by active status",
             },
             search: {

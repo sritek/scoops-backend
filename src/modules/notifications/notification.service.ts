@@ -26,6 +26,9 @@ const TEMPLATE_TYPE_MAP: Record<string, string> = {
   [EVENT_TYPES.STUDENT_ABSENT]: "absent",
   [EVENT_TYPES.FEE_CREATED]: "fee_due",
   [EVENT_TYPES.FEE_PAID]: "fee_paid",
+  [EVENT_TYPES.FEE_OVERDUE]: "fee_overdue",
+  [EVENT_TYPES.FEE_REMINDER]: "fee_reminder",
+  [EVENT_TYPES.BIRTHDAY]: "birthday",
 };
 
 /**
@@ -171,9 +174,33 @@ async function getRecipientPhone(event: StoredEvent): Promise<string | null> {
     }
 
     case EVENT_TYPES.FEE_CREATED:
-    case EVENT_TYPES.FEE_PAID: {
+    case EVENT_TYPES.FEE_PAID:
+    case EVENT_TYPES.FEE_OVERDUE:
+    case EVENT_TYPES.FEE_REMINDER: {
       // Get parent phone for student fee - scoped by tenant
       const studentId = data.studentId as string;
+      if (!studentId) return null;
+
+      const studentParent = await prisma.studentParent.findFirst({
+        where: {
+          studentId,
+          student: {
+            orgId: event.orgId,
+            branchId: event.branchId,
+          },
+        },
+        include: {
+          parent: {
+            select: { phone: true },
+          },
+        },
+      });
+      return studentParent?.parent.phone || null;
+    }
+
+    case EVENT_TYPES.BIRTHDAY: {
+      // Get parent phone for birthday student - scoped by tenant
+      const studentId = data.studentId as string || entityId;
       if (!studentId) return null;
 
       const studentParent = await prisma.studentParent.findFirst({
@@ -287,6 +314,34 @@ async function buildMessageParams(
         studentName: student ? formatFullName(student.firstName, student.lastName) : "Student",
         amount: String(Number(data.amount) || 0),
         paymentMode: (data.paymentMode as string) || "cash",
+      };
+    }
+
+    case EVENT_TYPES.FEE_OVERDUE: {
+      // Data comes from the scheduled job with all info
+      return {
+        studentName: (data.studentName as string) || "Student",
+        amount: String(Number(data.pendingAmount) || 0),
+        dueDate: (data.dueDate as string) || "",
+        daysOverdue: String(Number(data.daysOverdue) || 0),
+      };
+    }
+
+    case EVENT_TYPES.FEE_REMINDER: {
+      // Data comes from the scheduled job with all info
+      return {
+        studentName: (data.studentName as string) || "Student",
+        amount: String(Number(data.pendingAmount) || 0),
+        dueDate: (data.dueDate as string) || "",
+        days: String(Number(data.daysUntilDue) || 0),
+      };
+    }
+
+    case EVENT_TYPES.BIRTHDAY: {
+      // Data comes from the scheduled job with all info
+      return {
+        studentName: (data.studentName as string) || "Student",
+        age: String(Number(data.age) || 0),
       };
     }
 

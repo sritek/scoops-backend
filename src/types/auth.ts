@@ -9,6 +9,7 @@ export type Role = 'admin' | 'teacher' | 'accounts' | 'staff';
 export type Permission =
   | 'STUDENT_VIEW'
   | 'STUDENT_EDIT'
+  | 'ATTENDANCE_VIEW'
   | 'ATTENDANCE_MARK'
   | 'FEE_VIEW'
   | 'FEE_UPDATE'

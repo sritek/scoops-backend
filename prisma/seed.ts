@@ -1,6 +1,6 @@
-import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcrypt";
-import { randomBytes } from "crypto";
+import { PrismaClient, PaymentMode } from "@prisma/client";
+import * as bcrypt from "bcrypt";
+import { randomBytes, randomUUID } from "crypto";
 
 const prisma = new PrismaClient();
 
@@ -8,14 +8,8 @@ const BCRYPT_ROUNDS = 10;
 const DEFAULT_PASSWORD = "Password123";
 
 // ============================================
-// DATA HELPERS
+// HELPER FUNCTIONS
 // ============================================
-
-const FIRST_NAMES_MALE = ["Aarav", "Arjun", "Ishaan", "Vihaan", "Rohan", "Kabir", "Dev", "Karan", "Rahul", "Amit"];
-const FIRST_NAMES_FEMALE = ["Ananya", "Diya", "Kavya", "Priya", "Sneha", "Riya", "Meera", "Anjali", "Neha", "Pooja"];
-const LAST_NAMES = ["Sharma", "Gupta", "Singh", "Kumar", "Patel", "Verma", "Joshi", "Mehta", "Shah", "Reddy"];
-const CATEGORIES = ["gen", "obc", "sc", "st", "ews"];
-const PAYMENT_MODES: Array<"cash" | "upi" | "bank"> = ["cash", "upi", "bank"];
 
 function generateEmployeeId(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -36,380 +30,1473 @@ function randomInt(min: number, max: number): number {
 }
 
 function generatePhone(): string {
-  return "98" + Math.random().toString().slice(2, 10);
+  const prefixes = [
+    "98",
+    "97",
+    "96",
+    "95",
+    "94",
+    "93",
+    "91",
+    "90",
+    "89",
+    "88",
+    "87",
+    "86",
+    "85",
+    "84",
+    "83",
+    "82",
+    "81",
+    "80",
+    "79",
+    "78",
+    "77",
+    "76",
+    "75",
+    "74",
+    "73",
+    "72",
+    "71",
+    "70",
+  ];
+  return randomElement(prefixes) + Math.random().toString().slice(2, 10);
+}
+
+function logStep(step: number, total: number, message: string) {
+  console.log(`   [${step}/${total}] ${message}`);
 }
 
 // ============================================
-// MAIN SEED
+// INDIAN NAMES DATASET
+// ============================================
+
+const FIRST_NAMES_MALE = [
+  "Aarav",
+  "Arjun",
+  "Vihaan",
+  "Aditya",
+  "Sai",
+  "Ayaan",
+  "Krishna",
+  "Ishaan",
+  "Reyansh",
+  "Kabir",
+  "Vivaan",
+  "Shivansh",
+  "Dhruv",
+  "Harsh",
+  "Ansh",
+  "Rudra",
+  "Atharv",
+  "Aryan",
+  "Advait",
+  "Shaurya",
+  "Dev",
+  "Karan",
+  "Rahul",
+  "Amit",
+  "Rohan",
+  "Vikram",
+  "Raj",
+  "Yash",
+  "Nikhil",
+  "Varun",
+  "Siddharth",
+  "Aakash",
+  "Pranav",
+  "Surya",
+  "Karthik",
+  "Vijay",
+  "Ajay",
+  "Arun",
+  "Ganesh",
+  "Harish",
+  "Sourav",
+  "Arnab",
+  "Debashish",
+  "Partha",
+  "Subhash",
+  "Animesh",
+  "Dipankar",
+  "Joydeep",
+  "Kaushik",
+  "Prosenjit",
+];
+
+const FIRST_NAMES_FEMALE = [
+  "Ananya",
+  "Diya",
+  "Myra",
+  "Amaira",
+  "Pari",
+  "Saanvi",
+  "Kiara",
+  "Avni",
+  "Aadhya",
+  "Kavya",
+  "Navya",
+  "Prisha",
+  "Anika",
+  "Ishita",
+  "Anvi",
+  "Aaradhya",
+  "Ridhi",
+  "Siya",
+  "Riya",
+  "Shreya",
+  "Priya",
+  "Neha",
+  "Pooja",
+  "Anjali",
+  "Meera",
+  "Sneha",
+  "Kritika",
+  "Tanya",
+  "Nisha",
+  "Swati",
+  "Lakshmi",
+  "Divya",
+  "Deepa",
+  "Preethi",
+  "Sindhu",
+  "Swetha",
+  "Padma",
+  "Gayathri",
+  "Bhavani",
+  "Vaishnavi",
+  "Aparajita",
+  "Dipannita",
+  "Rituparna",
+  "Swastika",
+  "Paoli",
+  "Raima",
+  "Rupa",
+  "Tanushree",
+  "Ankita",
+  "Payel",
+];
+
+const LAST_NAMES = [
+  "Sharma",
+  "Gupta",
+  "Singh",
+  "Kumar",
+  "Verma",
+  "Joshi",
+  "Agarwal",
+  "Tiwari",
+  "Pandey",
+  "Mishra",
+  "Chauhan",
+  "Yadav",
+  "Saxena",
+  "Srivastava",
+  "Tripathi",
+  "Dubey",
+  "Shukla",
+  "Awasthi",
+  "Pathak",
+  "Chaudhary",
+  "Iyer",
+  "Rao",
+  "Reddy",
+  "Nair",
+  "Menon",
+  "Pillai",
+  "Krishnan",
+  "Subramaniam",
+  "Venkataraman",
+  "Raghavan",
+  "Patel",
+  "Shah",
+  "Mehta",
+  "Desai",
+  "Jain",
+  "Parikh",
+  "Trivedi",
+  "Modi",
+  "Gandhi",
+  "Parekh",
+  "Banerjee",
+  "Chatterjee",
+  "Mukherjee",
+  "Roy",
+  "Das",
+  "Sen",
+  "Bose",
+  "Dutta",
+  "Ghosh",
+  "Chakraborty",
+];
+
+const CATEGORIES: string[] = ["gen", "obc", "sc", "st", "ews"];
+const PAYMENT_MODES: PaymentMode[] = ["cash", "upi", "bank"];
+
+// ============================================
+// ORGANIZATION DEFINITIONS
+// ============================================
+
+interface OrgDefinition {
+  name: string;
+  type: "school" | "coaching";
+  branches: BranchDefinition[];
+  subjects: SubjectDefinition[];
+}
+
+interface BranchDefinition {
+  name: string;
+  city: string;
+  state: string;
+  pincode: string;
+  address: string;
+}
+
+interface SubjectDefinition {
+  name: string;
+  code: string;
+}
+
+const SCHOOL_SUBJECTS: SubjectDefinition[] = [
+  { name: "Mathematics", code: "MATH" },
+  { name: "English", code: "ENG" },
+  { name: "Hindi", code: "HIN" },
+  { name: "Science", code: "SCI" },
+  { name: "Social Studies", code: "SST" },
+  { name: "Physics", code: "PHY" },
+  { name: "Chemistry", code: "CHEM" },
+  { name: "Biology", code: "BIO" },
+  { name: "Computer Science", code: "CS" },
+  { name: "Physical Education", code: "PE" },
+];
+
+const IIT_JEE_SUBJECTS: SubjectDefinition[] = [
+  { name: "Physics", code: "PHY" },
+  { name: "Chemistry (Organic)", code: "CHO" },
+  { name: "Chemistry (Inorganic)", code: "CHI" },
+  { name: "Chemistry (Physical)", code: "CHP" },
+  { name: "Mathematics (Algebra)", code: "MALG" },
+  { name: "Mathematics (Calculus)", code: "MCAL" },
+  { name: "Mathematics (Coordinate)", code: "MCOR" },
+  { name: "Problem Solving", code: "PS" },
+  { name: "Mock Tests", code: "MT" },
+  { name: "Doubt Clearing", code: "DC" },
+];
+
+const IAS_SUBJECTS: SubjectDefinition[] = [
+  { name: "Indian Polity", code: "POL" },
+  { name: "Indian Economy", code: "ECO" },
+  { name: "Geography", code: "GEO" },
+  { name: "History (Ancient)", code: "HANC" },
+  { name: "History (Medieval)", code: "HMED" },
+  { name: "History (Modern)", code: "HMOD" },
+  { name: "Current Affairs", code: "CA" },
+  { name: "Ethics & Integrity", code: "ETH" },
+  { name: "Essay Writing", code: "ESS" },
+  { name: "CSAT", code: "CSAT" },
+];
+
+const PROFESSIONAL_SUBJECTS: SubjectDefinition[] = [
+  { name: "Accounting", code: "ACC" },
+  { name: "Business Law", code: "BLAW" },
+  { name: "Economics", code: "ECO" },
+  { name: "Financial Management", code: "FM" },
+  { name: "Auditing", code: "AUD" },
+  { name: "Taxation", code: "TAX" },
+  { name: "Company Law", code: "CLAW" },
+  { name: "Cost Accounting", code: "COST" },
+  { name: "Banking & Finance", code: "BF" },
+  { name: "Quantitative Aptitude", code: "QA" },
+];
+
+const ORGANIZATIONS: OrgDefinition[] = [
+  // Schools (3 branches each)
+  {
+    name: "Delhi Public School",
+    type: "school",
+    subjects: SCHOOL_SUBJECTS,
+    branches: [
+      {
+        name: "Rohini Campus",
+        city: "Delhi",
+        state: "Delhi",
+        pincode: "110085",
+        address: "Sector 14, Rohini",
+      },
+      {
+        name: "Noida Campus",
+        city: "Noida",
+        state: "Uttar Pradesh",
+        pincode: "201301",
+        address: "Sector 62, Noida",
+      },
+      {
+        name: "Gurgaon Campus",
+        city: "Gurgaon",
+        state: "Haryana",
+        pincode: "122001",
+        address: "DLF Phase 4",
+      },
+    ],
+  },
+  {
+    name: "Kendriya Vidyalaya",
+    type: "school",
+    subjects: SCHOOL_SUBJECTS,
+    branches: [
+      {
+        name: "RK Puram",
+        city: "Delhi",
+        state: "Delhi",
+        pincode: "110022",
+        address: "Sector 4, RK Puram",
+      },
+      {
+        name: "Pune Cantonment",
+        city: "Pune",
+        state: "Maharashtra",
+        pincode: "411001",
+        address: "Pune Cantonment Area",
+      },
+      {
+        name: "Bangalore ASC",
+        city: "Bangalore",
+        state: "Karnataka",
+        pincode: "560007",
+        address: "ASC Centre, Bangalore",
+      },
+    ],
+  },
+  {
+    name: "St. Mary's Convent School",
+    type: "school",
+    subjects: SCHOOL_SUBJECTS,
+    branches: [
+      {
+        name: "Andheri Campus",
+        city: "Mumbai",
+        state: "Maharashtra",
+        pincode: "400058",
+        address: "Andheri East",
+      },
+      {
+        name: "Thane Campus",
+        city: "Thane",
+        state: "Maharashtra",
+        pincode: "400601",
+        address: "Thane West",
+      },
+      {
+        name: "Navi Mumbai Campus",
+        city: "Navi Mumbai",
+        state: "Maharashtra",
+        pincode: "400706",
+        address: "Vashi",
+      },
+    ],
+  },
+  // Coaching Centers (5 branches each)
+  {
+    name: "Kota IIT Academy",
+    type: "coaching",
+    subjects: IIT_JEE_SUBJECTS,
+    branches: [
+      {
+        name: "Kota Main",
+        city: "Kota",
+        state: "Rajasthan",
+        pincode: "324001",
+        address: "Vigyan Nagar",
+      },
+      {
+        name: "Delhi Centre",
+        city: "Delhi",
+        state: "Delhi",
+        pincode: "110034",
+        address: "Mukherjee Nagar",
+      },
+      {
+        name: "Jaipur Centre",
+        city: "Jaipur",
+        state: "Rajasthan",
+        pincode: "302001",
+        address: "C-Scheme",
+      },
+      {
+        name: "Mumbai Centre",
+        city: "Mumbai",
+        state: "Maharashtra",
+        pincode: "400001",
+        address: "Fort",
+      },
+      {
+        name: "Hyderabad Centre",
+        city: "Hyderabad",
+        state: "Telangana",
+        pincode: "500034",
+        address: "Kukatpally",
+      },
+    ],
+  },
+  {
+    name: "Vision IAS Institute",
+    type: "coaching",
+    subjects: IAS_SUBJECTS,
+    branches: [
+      {
+        name: "Old Rajender Nagar",
+        city: "Delhi",
+        state: "Delhi",
+        pincode: "110060",
+        address: "25/1, Rajender Nagar",
+      },
+      {
+        name: "Bangalore Centre",
+        city: "Bangalore",
+        state: "Karnataka",
+        pincode: "560001",
+        address: "MG Road",
+      },
+      {
+        name: "Hyderabad Centre",
+        city: "Hyderabad",
+        state: "Telangana",
+        pincode: "500029",
+        address: "Ashok Nagar",
+      },
+      {
+        name: "Pune Centre",
+        city: "Pune",
+        state: "Maharashtra",
+        pincode: "411004",
+        address: "FC Road",
+      },
+      {
+        name: "Chennai Centre",
+        city: "Chennai",
+        state: "Tamil Nadu",
+        pincode: "600017",
+        address: "T Nagar",
+      },
+    ],
+  },
+  {
+    name: "Career Launcher Academy",
+    type: "coaching",
+    subjects: PROFESSIONAL_SUBJECTS,
+    branches: [
+      {
+        name: "Connaught Place",
+        city: "Delhi",
+        state: "Delhi",
+        pincode: "110001",
+        address: "Connaught Place",
+      },
+      {
+        name: "Dadar Centre",
+        city: "Mumbai",
+        state: "Maharashtra",
+        pincode: "400028",
+        address: "Dadar West",
+      },
+      {
+        name: "Salt Lake Centre",
+        city: "Kolkata",
+        state: "West Bengal",
+        pincode: "700091",
+        address: "Salt Lake Sector V",
+      },
+      {
+        name: "Anna Nagar Centre",
+        city: "Chennai",
+        state: "Tamil Nadu",
+        pincode: "600040",
+        address: "Anna Nagar",
+      },
+      {
+        name: "Koramangala Centre",
+        city: "Bangalore",
+        state: "Karnataka",
+        pincode: "560034",
+        address: "Koramangala",
+      },
+    ],
+  },
+];
+
+// ============================================
+// BATCH DEFINITIONS (REDUCED FOR PERFORMANCE)
+// ============================================
+
+interface SchoolBatchDef {
+  classNumber: number;
+  section: string;
+  academicLevel: string;
+  stream?: string;
+}
+
+interface CoachingBatchDef {
+  name: string;
+  academicLevel: string;
+  stream?: string;
+}
+
+function getSchoolBatches(hasTwoSections: boolean): SchoolBatchDef[] {
+  const sections = hasTwoSections ? ["A", "B"] : ["A"];
+  const batches: SchoolBatchDef[] = [];
+
+  // Primary (Class 1-5)
+  for (let cls = 1; cls <= 5; cls++) {
+    for (const section of sections) {
+      batches.push({ classNumber: cls, section, academicLevel: "primary" });
+    }
+  }
+
+  // Middle School (Class 6-8)
+  for (let cls = 6; cls <= 8; cls++) {
+    for (const section of sections) {
+      batches.push({ classNumber: cls, section, academicLevel: "middle" });
+    }
+  }
+
+  // Secondary (Class 9-10)
+  for (let cls = 9; cls <= 10; cls++) {
+    for (const section of sections) {
+      batches.push({ classNumber: cls, section, academicLevel: "secondary" });
+    }
+  }
+
+  // Senior Secondary (Class 11-12) with streams
+  for (let cls = 11; cls <= 12; cls++) {
+    batches.push({
+      classNumber: cls,
+      section: "A",
+      academicLevel: "senior_secondary",
+      stream: "science",
+    });
+    batches.push({
+      classNumber: cls,
+      section: "B",
+      academicLevel: "senior_secondary",
+      stream: "commerce",
+    });
+    batches.push({
+      classNumber: cls,
+      section: "C",
+      academicLevel: "senior_secondary",
+      stream: "arts",
+    });
+  }
+
+  return batches;
+}
+
+function getIITBatches(): CoachingBatchDef[] {
+  return [
+    {
+      name: "Foundation (Class 9-10)",
+      academicLevel: "secondary",
+      stream: "science",
+    },
+    {
+      name: "Target JEE (Class 11)",
+      academicLevel: "senior_secondary",
+      stream: "science",
+    },
+    {
+      name: "Target JEE (Class 12)",
+      academicLevel: "senior_secondary",
+      stream: "science",
+    },
+    { name: "Dropper Batch", academicLevel: "coaching", stream: "science" },
+    { name: "NEET Foundation", academicLevel: "secondary", stream: "science" },
+    {
+      name: "Target NEET (Class 12)",
+      academicLevel: "senior_secondary",
+      stream: "science",
+    },
+  ];
+}
+
+function getIASBatches(): CoachingBatchDef[] {
+  return [
+    { name: "Prelims Foundation", academicLevel: "coaching" },
+    { name: "Mains Batch", academicLevel: "coaching" },
+    { name: "Optional: PSIR", academicLevel: "coaching" },
+    { name: "Test Series - Prelims", academicLevel: "coaching" },
+  ];
+}
+
+function getProfessionalBatches(): CoachingBatchDef[] {
+  return [
+    { name: "CA Foundation", academicLevel: "coaching", stream: "commerce" },
+    { name: "CA Intermediate", academicLevel: "coaching", stream: "commerce" },
+    { name: "GATE - CSE", academicLevel: "coaching", stream: "science" },
+    { name: "Bank PO Preparation", academicLevel: "coaching" },
+  ];
+}
+
+// ============================================
+// FEE STRUCTURE
+// ============================================
+
+function getFeeForBatch(
+  academicLevel: string,
+  isSchool: boolean,
+  orgName: string
+): number {
+  const isPremium =
+    orgName.includes("Delhi Public") || orgName.includes("St. Mary");
+  const multiplier = isPremium ? 1.5 : 1;
+
+  if (isSchool) {
+    switch (academicLevel) {
+      case "primary":
+        return Math.round(randomInt(2000, 4000) * multiplier);
+      case "middle":
+        return Math.round(randomInt(3000, 5000) * multiplier);
+      case "secondary":
+        return Math.round(randomInt(4000, 6000) * multiplier);
+      case "senior_secondary":
+        return Math.round(randomInt(5000, 8000) * multiplier);
+      default:
+        return 3500;
+    }
+  } else {
+    if (orgName.includes("Kota IIT")) return randomInt(8000, 15000);
+    if (orgName.includes("Vision IAS")) return randomInt(12000, 25000);
+    return randomInt(5000, 12000);
+  }
+}
+
+// ============================================
+// PERIOD TEMPLATE
+// ============================================
+
+interface SlotDef {
+  periodNumber: number;
+  startTime: string;
+  endTime: string;
+  isBreak: boolean;
+  breakName?: string;
+}
+
+const DEFAULT_SLOTS: SlotDef[] = [
+  { periodNumber: 1, startTime: "08:00", endTime: "08:45", isBreak: false },
+  { periodNumber: 2, startTime: "08:45", endTime: "09:30", isBreak: false },
+  { periodNumber: 3, startTime: "09:30", endTime: "10:15", isBreak: false },
+  {
+    periodNumber: 0,
+    startTime: "10:15",
+    endTime: "10:30",
+    isBreak: true,
+    breakName: "Short Break",
+  },
+  { periodNumber: 4, startTime: "10:30", endTime: "11:15", isBreak: false },
+  { periodNumber: 5, startTime: "11:15", endTime: "12:00", isBreak: false },
+  {
+    periodNumber: 0,
+    startTime: "12:00",
+    endTime: "12:45",
+    isBreak: true,
+    breakName: "Lunch Break",
+  },
+  { periodNumber: 6, startTime: "12:45", endTime: "13:30", isBreak: false },
+  { periodNumber: 7, startTime: "13:30", endTime: "14:15", isBreak: false },
+  { periodNumber: 8, startTime: "14:15", endTime: "15:00", isBreak: false },
+];
+
+// ============================================
+// CLEANUP FUNCTION
+// ============================================
+
+async function safeDeleteMany(
+  model: { deleteMany: () => Promise<unknown> },
+  name: string
+) {
+  try {
+    await model.deleteMany();
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "P2021"
+    ) {
+      console.log(`   ⚠ Table ${name} doesn't exist, skipping...`);
+    } else {
+      throw error;
+    }
+  }
+}
+
+async function cleanDatabase() {
+  console.log("🧹 Cleaning existing data...");
+
+  await safeDeleteMany(prisma.notificationLog, "NotificationLog");
+  await safeDeleteMany(prisma.messageTemplate, "MessageTemplate");
+  await safeDeleteMany(prisma.event, "Event");
+  await safeDeleteMany(prisma.feePayment, "FeePayment");
+  await safeDeleteMany(prisma.studentFee, "StudentFee");
+  await safeDeleteMany(prisma.feePlan, "FeePlan");
+  await safeDeleteMany(prisma.attendanceRecord, "AttendanceRecord");
+  await safeDeleteMany(prisma.attendanceSession, "AttendanceSession");
+  await safeDeleteMany(prisma.period, "Period");
+  await safeDeleteMany(prisma.periodTemplateSlot, "PeriodTemplateSlot");
+  await safeDeleteMany(prisma.periodTemplate, "PeriodTemplate");
+  await safeDeleteMany(prisma.subject, "Subject");
+  await safeDeleteMany(prisma.studentParent, "StudentParent");
+  await safeDeleteMany(prisma.parent, "Parent");
+  await safeDeleteMany(prisma.student, "Student");
+  await safeDeleteMany(prisma.batch, "Batch");
+  await safeDeleteMany(prisma.academicSession, "AcademicSession");
+  await safeDeleteMany(prisma.user, "User");
+  await safeDeleteMany(prisma.branch, "Branch");
+  await safeDeleteMany(prisma.organization, "Organization");
+
+  console.log("   ✓ Database cleaned\n");
+}
+
+// ============================================
+// TYPES
+// ============================================
+
+interface CreatedOrg {
+  id: string;
+  name: string;
+  type: string;
+  definition: OrgDefinition;
+}
+
+interface CreatedBranch {
+  id: string;
+  orgId: string;
+  name: string;
+  isDefault: boolean;
+  orgName: string;
+  orgType: string;
+}
+
+interface CreatedSession {
+  id: string;
+  orgId: string;
+  name: string;
+  isCurrent: boolean;
+}
+
+interface CreatedUser {
+  id: string;
+  orgId: string;
+  branchId: string;
+  employeeId: string;
+  role: string;
+  firstName: string;
+  lastName: string;
+}
+
+interface CreatedBatch {
+  id: string;
+  orgId: string;
+  branchId: string;
+  sessionId: string | null;
+  name: string;
+  academicLevel: string;
+  stream: string | null;
+  classTeacherId: string | null;
+  feePlanId?: string;
+  orgName: string;
+  isSchool: boolean;
+}
+
+interface StudentWithParent {
+  studentId: string;
+  parentId: string;
+  orgId: string;
+  branchId: string;
+  batchId: string;
+  lastName: string;
+}
+
+// ============================================
+// MAIN SEED FUNCTION
 // ============================================
 
 async function main() {
-  console.log("🌱 Starting seed...\n");
+  const startTime = Date.now();
+  console.log("🌱 Starting optimized Indian education seed...\n");
+  console.log("=".repeat(60));
 
   const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, BCRYPT_ROUNDS);
+  const TOTAL_STEPS = 12;
 
-  // Clean existing data
-  console.log("🧹 Cleaning existing data...");
-  await prisma.notificationLog.deleteMany();
-  await prisma.messageTemplate.deleteMany();
-  await prisma.event.deleteMany();
-  await prisma.feePayment.deleteMany();
-  await prisma.studentFee.deleteMany();
-  await prisma.feePlan.deleteMany();
-  await prisma.attendanceRecord.deleteMany();
-  await prisma.attendanceSession.deleteMany();
-  await prisma.studentParent.deleteMany();
-  await prisma.parent.deleteMany();
-  await prisma.student.deleteMany();
-  await prisma.batch.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.branch.deleteMany();
-  await prisma.organization.deleteMany();
+  // Phase 1: Cleanup
+  await cleanDatabase();
 
-  // ============================================
-  // ORG 1: ABC Coaching Center
-  // ============================================
-  console.log("\n📦 Creating ABC Coaching Center...");
+  // Phase 2: Organizations & Branches
+  logStep(1, TOTAL_STEPS, "Creating organizations and branches...");
+  const orgs: CreatedOrg[] = [];
+  const branches: CreatedBranch[] = [];
 
-  const org1 = await prisma.organization.create({
-    data: { name: "ABC Coaching Center", type: "coaching", language: "en", timezone: "Asia/Kolkata" },
-  });
-
-  const org1Branch1 = await prisma.branch.create({
-    data: { orgId: org1.id, name: "Main Branch", address: "123 MG Road", city: "Bangalore", state: "Karnataka", pincode: "560001", isDefault: true },
-  });
-
-  const org1Branch2 = await prisma.branch.create({
-    data: { orgId: org1.id, name: "South Branch", address: "456 BTM Layout", city: "Bangalore", state: "Karnataka", pincode: "560068", isDefault: false },
-  });
-
-  // Users for Org1
-  const org1Admin = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Rajesh", lastName: "Kumar", phone: "9876543210", email: "admin@abccoaching.com", role: "admin", isActive: true },
-  });
-
-  const org1Teacher1 = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Priya", lastName: "Sharma", phone: "9876543211", email: "priya@abccoaching.com", role: "teacher", isActive: true },
-  });
-
-  const org1Teacher2 = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Amit", lastName: "Patel", phone: "9876543212", email: "amit@abccoaching.com", role: "teacher", isActive: true },
-  });
-
-  const org1Accountant = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Sunita", lastName: "Verma", phone: "9876543213", email: "accounts@abccoaching.com", role: "accounts", isActive: true },
-  });
-
-  const org1Staff = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Ramesh", lastName: "Yadav", phone: "9876543214", email: "staff@abccoaching.com", role: "staff", isActive: true },
-  });
-
-  const org1Branch2Admin = await prisma.user.create({
-    data: { orgId: org1.id, branchId: org1Branch2.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Sunil", lastName: "Sharma", phone: "9876543220", email: "admin.south@abccoaching.com", role: "admin", isActive: true },
-  });
-
-  // Batches for Org1
-  const batch10Science = await prisma.batch.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, name: "JEE Foundation", academicLevel: "secondary", stream: "science", teacherId: org1Teacher1.id, isActive: true },
-  });
-
-  const batch12Commerce = await prisma.batch.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, name: "NEET Crash Course", academicLevel: "senior_secondary", stream: "science", teacherId: org1Teacher2.id, isActive: true },
-  });
-
-  const batch9General = await prisma.batch.create({
-    data: { orgId: org1.id, branchId: org1Branch2.id, name: "Board Prep - Class 10", academicLevel: "secondary", stream: null, isActive: true },
-  });
-
-  // Fee Plans for Org1
-  const feePlan1 = await prisma.feePlan.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, name: "Monthly Tuition - Secondary", amount: 3500, frequency: "monthly", isActive: true },
-  });
-
-  const feePlan2 = await prisma.feePlan.create({
-    data: { orgId: org1.id, branchId: org1Branch1.id, name: "Monthly Tuition - Senior Secondary", amount: 5000, frequency: "monthly", isActive: true },
-  });
-
-  const feePlan3 = await prisma.feePlan.create({
-    data: { orgId: org1.id, branchId: org1Branch2.id, name: "Monthly Tuition - Secondary", amount: 3000, frequency: "monthly", isActive: true },
-  });
-
-  // ============================================
-  // ORG 2: Sunrise School
-  // ============================================
-  console.log("📦 Creating Sunrise School...");
-
-  const org2 = await prisma.organization.create({
-    data: { name: "Sunrise Public School", type: "school", language: "en", timezone: "Asia/Kolkata" },
-  });
-
-  const org2Branch1 = await prisma.branch.create({
-    data: { orgId: org2.id, name: "Main Campus", address: "789 Knowledge Park", city: "Pune", state: "Maharashtra", pincode: "411001", isDefault: true },
-  });
-
-  const org2Admin = await prisma.user.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Vikram", lastName: "Desai", phone: "9876543230", email: "admin@sunriseschool.com", role: "admin", isActive: true },
-  });
-
-  const org2Teacher = await prisma.user.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Meera", lastName: "Iyer", phone: "9876543231", email: "meera@sunriseschool.com", role: "teacher", isActive: true },
-  });
-
-  const org2Accountant = await prisma.user.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, employeeId: generateEmployeeId(), passwordHash, mustChangePassword: true, firstName: "Gopal", lastName: "Nair", phone: "9876543232", email: "accounts@sunriseschool.com", role: "accounts", isActive: true },
-  });
-
-  const org2Batch1 = await prisma.batch.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, name: "Class 8", academicLevel: "middle", stream: null, teacherId: org2Teacher.id, isActive: true },
-  });
-
-  const org2Batch2 = await prisma.batch.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, name: "Class 10 - Science", academicLevel: "secondary", stream: "science", teacherId: org2Teacher.id, isActive: true },
-  });
-
-  const org2FeePlan = await prisma.feePlan.create({
-    data: { orgId: org2.id, branchId: org2Branch1.id, name: "Monthly Tuition", amount: 4000, frequency: "monthly", isActive: true },
-  });
-
-  // ============================================
-  // CREATE STUDENTS (25 per org)
-  // ============================================
-  console.log("👨‍🎓 Creating students...");
-
-  const allStudents: Array<{ id: string; batchId: string | null; branchId: string; orgId: string }> = [];
-
-  // Org1 Branch1 - 15 students
-  for (let i = 0; i < 15; i++) {
-    const isMale = Math.random() > 0.5;
-    const batch = i < 8 ? batch10Science : batch12Commerce;
-    const student = await prisma.student.create({
+  for (const orgDef of ORGANIZATIONS) {
+    const org = await prisma.organization.create({
       data: {
-        orgId: org1.id,
-        branchId: org1Branch1.id,
-        firstName: randomElement(isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE),
+        name: orgDef.name,
+        type: orgDef.type,
+        language: "en",
+        timezone: "Asia/Kolkata",
+      },
+    });
+
+    orgs.push({
+      id: org.id,
+      name: org.name,
+      type: org.type,
+      definition: orgDef,
+    });
+
+    for (let i = 0; i < orgDef.branches.length; i++) {
+      const branchDef = orgDef.branches[i];
+      const branch = await prisma.branch.create({
+        data: {
+          orgId: org.id,
+          name: branchDef.name,
+          address: branchDef.address,
+          city: branchDef.city,
+          state: branchDef.state,
+          pincode: branchDef.pincode,
+          isDefault: i === 0,
+        },
+      });
+
+      branches.push({
+        id: branch.id,
+        orgId: org.id,
+        name: branch.name,
+        isDefault: branch.isDefault,
+        orgName: org.name,
+        orgType: org.type,
+      });
+    }
+  }
+  console.log(
+    `       ✓ ${orgs.length} organizations, ${branches.length} branches`
+  );
+
+  // Phase 3: Academic Sessions
+  logStep(2, TOTAL_STEPS, "Creating academic sessions...");
+  const sessions: CreatedSession[] = [];
+  const sessionYears = ["2023-24", "2024-25", "2025-26"];
+
+  for (const org of orgs) {
+    for (let i = 0; i < sessionYears.length; i++) {
+      const year = sessionYears[i];
+      const startYear = parseInt(year.split("-")[0]);
+      const session = await prisma.academicSession.create({
+        data: {
+          orgId: org.id,
+          name: year,
+          startDate: new Date(startYear, 3, 1),
+          endDate: new Date(startYear + 1, 2, 31),
+          isCurrent: i === sessionYears.length - 1,
+        },
+      });
+      sessions.push({
+        id: session.id,
+        orgId: org.id,
+        name: session.name,
+        isCurrent: session.isCurrent,
+      });
+    }
+  }
+  console.log(`       ✓ ${sessions.length} academic sessions`);
+
+  // Phase 4: Subjects (bulk)
+  logStep(3, TOTAL_STEPS, "Creating subjects...");
+  for (const org of orgs) {
+    await prisma.subject.createMany({
+      data: org.definition.subjects.map((s) => ({
+        orgId: org.id,
+        name: s.name,
+        code: s.code,
+        isActive: true,
+      })),
+    });
+  }
+  console.log(`       ✓ Subjects created for ${orgs.length} organizations`);
+
+  // Phase 5: Period Templates (bulk)
+  logStep(4, TOTAL_STEPS, "Creating period templates...");
+  for (const org of orgs) {
+    const template = await prisma.periodTemplate.create({
+      data: { orgId: org.id, name: "Default Schedule", isDefault: true },
+    });
+
+    let breakCounter = 100;
+    await prisma.periodTemplateSlot.createMany({
+      data: DEFAULT_SLOTS.map((slot) => ({
+        templateId: template.id,
+        periodNumber: slot.isBreak ? breakCounter++ : slot.periodNumber,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        isBreak: slot.isBreak,
+        breakName: slot.breakName ?? null,
+      })),
+    });
+  }
+  console.log(`       ✓ Period templates created`);
+
+  // Phase 6: Users (bulk per branch)
+  logStep(5, TOTAL_STEPS, "Creating users...");
+  const users: CreatedUser[] = [];
+  const teachers: CreatedUser[] = [];
+  const accountants: CreatedUser[] = [];
+
+  for (const branch of branches) {
+    const branchUsers: Array<{
+      id: string;
+      orgId: string;
+      branchId: string;
+      employeeId: string;
+      passwordHash: string;
+      mustChangePassword: boolean;
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email: string | null;
+      role: "admin" | "teacher" | "accounts" | "staff";
+      isActive: boolean;
+    }> = [];
+
+    // Admin
+    const adminId = randomUUID();
+    branchUsers.push({
+      id: adminId,
+      orgId: branch.orgId,
+      branchId: branch.id,
+      employeeId: generateEmployeeId(),
+      passwordHash,
+      mustChangePassword: true,
+      firstName: randomElement(FIRST_NAMES_MALE),
+      lastName: randomElement(LAST_NAMES),
+      phone: generatePhone(),
+      email: `admin.${branch.name
+        .toLowerCase()
+        .replace(/\s+/g, ".")}@example.com`,
+      role: "admin",
+      isActive: true,
+    });
+
+    // 3-4 Teachers
+    const teacherCount = randomInt(3, 4);
+    for (let i = 0; i < teacherCount; i++) {
+      const isMale = Math.random() > 0.4;
+      const teacherId = randomUUID();
+      branchUsers.push({
+        id: teacherId,
+        orgId: branch.orgId,
+        branchId: branch.id,
+        employeeId: generateEmployeeId(),
+        passwordHash,
+        mustChangePassword: true,
+        firstName: randomElement(
+          isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE
+        ),
         lastName: randomElement(LAST_NAMES),
-        gender: isMale ? "male" : "female",
-        dob: new Date(randomInt(2007, 2012), randomInt(0, 11), randomInt(1, 28)),
-        category: randomElement(CATEGORIES),
-        admissionYear: randomInt(2022, 2025),
+        phone: generatePhone(),
+        email: null,
+        role: "teacher",
+        isActive: true,
+      });
+    }
+
+    // Accountant
+    const accountantId = randomUUID();
+    branchUsers.push({
+      id: accountantId,
+      orgId: branch.orgId,
+      branchId: branch.id,
+      employeeId: generateEmployeeId(),
+      passwordHash,
+      mustChangePassword: true,
+      firstName: randomElement(
+        Math.random() > 0.5 ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE
+      ),
+      lastName: randomElement(LAST_NAMES),
+      phone: generatePhone(),
+      email: null,
+      role: "accounts",
+      isActive: true,
+    });
+
+    // Bulk insert users for this branch
+    await prisma.user.createMany({ data: branchUsers });
+
+    // Track users for later use
+    for (const u of branchUsers) {
+      const userRecord = {
+        id: u.id,
+        orgId: u.orgId,
+        branchId: u.branchId,
+        employeeId: u.employeeId,
+        role: u.role,
+        firstName: u.firstName,
+        lastName: u.lastName,
+      };
+      users.push(userRecord);
+      if (u.role === "teacher") teachers.push(userRecord);
+      if (u.role === "accounts") accountants.push(userRecord);
+    }
+  }
+  console.log(`       ✓ ${users.length} users (${teachers.length} teachers)`);
+
+  // Phase 7: Batches
+  logStep(6, TOTAL_STEPS, "Creating batches...");
+  const batches: CreatedBatch[] = [];
+
+  for (const branch of branches) {
+    const org = orgs.find((o) => o.id === branch.orgId)!;
+    const currentSession = sessions.find(
+      (s) => s.orgId === org.id && s.isCurrent
+    )!;
+    const branchTeachers = teachers.filter((t) => t.branchId === branch.id);
+
+    const isSchool = org.type === "school";
+    let batchDefs: { name: string; academicLevel: string; stream?: string }[] =
+      [];
+
+    if (isSchool) {
+      const hasTwoSections = org.name.includes("Delhi Public");
+      const schoolBatches = getSchoolBatches(hasTwoSections);
+      batchDefs = schoolBatches.map((b) => ({
+        name: `Class ${b.classNumber}-${b.section}${
+          b.stream ? ` (${b.stream})` : ""
+        }`,
+        academicLevel: b.academicLevel,
+        stream: b.stream,
+      }));
+    } else if (org.name.includes("Kota IIT")) {
+      batchDefs = getIITBatches();
+    } else if (org.name.includes("Vision IAS")) {
+      batchDefs = getIASBatches();
+    } else {
+      batchDefs = getProfessionalBatches();
+    }
+
+    // Prepare batch data for bulk insert
+    const batchData = batchDefs.map((def) => {
+      const classTeacher =
+        branchTeachers.length > 0 ? randomElement(branchTeachers) : null;
+      return {
+        id: randomUUID(),
+        orgId: org.id,
+        branchId: branch.id,
+        sessionId: currentSession.id,
+        name: def.name,
+        academicLevel: def.academicLevel,
+        stream: def.stream ?? null,
+        classTeacherId: classTeacher?.id ?? null,
+        isActive: true,
+      };
+    });
+
+    await prisma.batch.createMany({ data: batchData });
+
+    // Track batches
+    for (const b of batchData) {
+      batches.push({
+        id: b.id,
+        orgId: b.orgId,
+        branchId: b.branchId,
+        sessionId: b.sessionId,
+        name: b.name,
+        academicLevel: b.academicLevel,
+        stream: b.stream,
+        classTeacherId: b.classTeacherId,
+        orgName: org.name,
+        isSchool,
+      });
+    }
+  }
+  console.log(`       ✓ ${batches.length} batches`);
+
+  // Phase 8: Fee Plans (bulk)
+  logStep(7, TOTAL_STEPS, "Creating fee plans...");
+  const feePlanData = batches.map((batch) => ({
+    id: randomUUID(),
+    orgId: batch.orgId,
+    branchId: batch.branchId,
+    name: `Fee - ${batch.name}`,
+    amount: getFeeForBatch(batch.academicLevel, batch.isSchool, batch.orgName),
+    frequency: "monthly" as const,
+    isActive: true,
+  }));
+
+  await prisma.feePlan.createMany({ data: feePlanData });
+
+  // Map fee plans to batches
+  const feePlanMap = new Map<string, { id: string; amount: number }>();
+  for (let i = 0; i < batches.length; i++) {
+    batches[i].feePlanId = feePlanData[i].id;
+    feePlanMap.set(batches[i].id, {
+      id: feePlanData[i].id,
+      amount: feePlanData[i].amount,
+    });
+  }
+  console.log(`       ✓ ${feePlanData.length} fee plans`);
+
+  // Phase 9: Students & Parents (BULK - the main optimization)
+  logStep(8, TOTAL_STEPS, "Creating students and parents (bulk)...");
+
+  // Pre-generate ALL student and parent data
+  const allStudentData: Array<{
+    id: string;
+    orgId: string;
+    branchId: string;
+    batchId: string;
+    firstName: string;
+    lastName: string;
+    gender: string;
+    dob: Date;
+    category: string;
+    admissionYear: number;
+    status: "active";
+  }> = [];
+
+  const allParentData: Array<{
+    id: string;
+    orgId: string;
+    branchId: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+  }> = [];
+
+  const studentParentLinks: StudentWithParent[] = [];
+
+  for (const batch of batches) {
+    // REDUCED student counts for moderate data volume
+    const studentCount = batch.isSchool ? randomInt(5, 8) : randomInt(10, 15);
+
+    for (let i = 0; i < studentCount; i++) {
+      const isMale = Math.random() > 0.5;
+      const lastName = randomElement(LAST_NAMES);
+      const dobYear = batch.isSchool
+        ? randomInt(2006, 2018)
+        : randomInt(1998, 2007);
+
+      const studentId = randomUUID();
+      const parentId = randomUUID();
+
+      allStudentData.push({
+        id: studentId,
+        orgId: batch.orgId,
+        branchId: batch.branchId,
         batchId: batch.id,
-        status: "active",
-      },
-    });
-    allStudents.push(student);
-
-    // Create parent
-    const parent = await prisma.parent.create({
-      data: { orgId: org1.id, branchId: org1Branch1.id, firstName: randomElement(FIRST_NAMES_MALE), lastName: student.lastName, phone: generatePhone() },
-    });
-    await prisma.studentParent.create({ data: { studentId: student.id, parentId: parent.id, relation: "father" } });
-  }
-
-  // Org1 Branch2 - 10 students
-  for (let i = 0; i < 10; i++) {
-    const isMale = Math.random() > 0.5;
-    const student = await prisma.student.create({
-      data: {
-        orgId: org1.id,
-        branchId: org1Branch2.id,
-        firstName: randomElement(isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE),
-        lastName: randomElement(LAST_NAMES),
+        firstName: randomElement(
+          isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE
+        ),
+        lastName,
         gender: isMale ? "male" : "female",
-        dob: new Date(randomInt(2009, 2012), randomInt(0, 11), randomInt(1, 28)),
+        dob: new Date(dobYear, randomInt(0, 11), randomInt(1, 28)),
         category: randomElement(CATEGORIES),
         admissionYear: randomInt(2022, 2025),
-        batchId: batch9General.id,
         status: "active",
-      },
-    });
-    allStudents.push(student);
+      });
 
-    const parent = await prisma.parent.create({
-      data: { orgId: org1.id, branchId: org1Branch2.id, firstName: randomElement(FIRST_NAMES_MALE), lastName: student.lastName, phone: generatePhone() },
-    });
-    await prisma.studentParent.create({ data: { studentId: student.id, parentId: parent.id, relation: "father" } });
-  }
+      allParentData.push({
+        id: parentId,
+        orgId: batch.orgId,
+        branchId: batch.branchId,
+        firstName: randomElement(FIRST_NAMES_MALE),
+        lastName,
+        phone: generatePhone(),
+      });
 
-  // Org2 - 20 students
-  for (let i = 0; i < 20; i++) {
-    const isMale = Math.random() > 0.5;
-    const batch = i < 10 ? org2Batch1 : org2Batch2;
-    const student = await prisma.student.create({
-      data: {
-        orgId: org2.id,
-        branchId: org2Branch1.id,
-        firstName: randomElement(isMale ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE),
-        lastName: randomElement(LAST_NAMES),
-        gender: isMale ? "male" : "female",
-        dob: new Date(randomInt(2008, 2013), randomInt(0, 11), randomInt(1, 28)),
-        category: randomElement(CATEGORIES),
-        admissionYear: randomInt(2022, 2025),
+      studentParentLinks.push({
+        studentId,
+        parentId,
+        orgId: batch.orgId,
+        branchId: batch.branchId,
         batchId: batch.id,
-        status: "active",
-      },
-    });
-    allStudents.push(student);
-
-    const parent = await prisma.parent.create({
-      data: { orgId: org2.id, branchId: org2Branch1.id, firstName: randomElement(FIRST_NAMES_MALE), lastName: student.lastName, phone: generatePhone() },
-    });
-    await prisma.studentParent.create({ data: { studentId: student.id, parentId: parent.id, relation: "father" } });
+        lastName,
+      });
+    }
   }
 
-  // ============================================
-  // CREATE FEES AND PAYMENTS
-  // ============================================
-  console.log("💳 Creating fees and payments...");
+  // Bulk insert students
+  await prisma.student.createMany({ data: allStudentData });
+  console.log(`       ✓ ${allStudentData.length} students`);
 
+  // Bulk insert parents
+  await prisma.parent.createMany({ data: allParentData });
+  console.log(`       ✓ ${allParentData.length} parents`);
+
+  // Bulk insert student-parent links
+  logStep(9, TOTAL_STEPS, "Creating student-parent links (bulk)...");
+  await prisma.studentParent.createMany({
+    data: studentParentLinks.map((link) => ({
+      studentId: link.studentId,
+      parentId: link.parentId,
+      relation: "father",
+    })),
+  });
+  console.log(`       ✓ ${studentParentLinks.length} links`);
+
+  // Phase 10: Fees & Payments (BULK)
+  logStep(10, TOTAL_STEPS, "Creating fees and payments (bulk)...");
   const today = new Date();
   const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 10);
   const thisMonth = new Date(today.getFullYear(), today.getMonth(), 10);
 
-  for (const student of allStudents) {
-    let feePlan: typeof feePlan1;
-    if (student.orgId === org1.id) {
-      if (student.branchId === org1Branch1.id) {
-        feePlan = student.batchId === batch10Science.id ? feePlan1 : feePlan2;
-      } else {
-        feePlan = feePlan3;
-      }
-    } else {
-      feePlan = org2FeePlan;
-    }
+  const allFeeData: Array<{
+    id: string;
+    studentId: string;
+    feePlanId: string;
+    totalAmount: number;
+    paidAmount: number;
+    dueDate: Date;
+    status: "paid" | "partial" | "pending";
+  }> = [];
 
-    // Last month fee - mostly paid
-    const lastMonthPaid = Math.random() < 0.8;
-    const lastMonthPartial = !lastMonthPaid && Math.random() < 0.5;
-    const lastMonthPaidAmount = lastMonthPaid ? feePlan.amount : lastMonthPartial ? Math.floor(feePlan.amount * 0.5) : 0;
+  const allPaymentData: Array<{
+    studentFeeId: string;
+    amount: number;
+    paymentMode: PaymentMode;
+    receivedById: string;
+    receivedAt: Date;
+  }> = [];
 
-    const lastMonthFee = await prisma.studentFee.create({
-      data: {
-        studentId: student.id,
-        feePlanId: feePlan.id,
-        totalAmount: feePlan.amount,
-        paidAmount: lastMonthPaidAmount,
-        dueDate: lastMonth,
-        status: lastMonthPaid ? "paid" : lastMonthPartial ? "partial" : "pending",
-      },
+  for (const link of studentParentLinks) {
+    const feePlan = feePlanMap.get(link.batchId);
+    if (!feePlan) continue;
+
+    const accountant = accountants.find((a) => a.branchId === link.branchId);
+    if (!accountant) continue;
+
+    // Last month fee
+    const lastMonthPaid = Math.random() < 0.85;
+    const lastMonthPartial = !lastMonthPaid && Math.random() < 0.4;
+    const lastMonthPaidAmount = lastMonthPaid
+      ? feePlan.amount
+      : lastMonthPartial
+      ? Math.floor(feePlan.amount * 0.5)
+      : 0;
+
+    const lastMonthFeeId = randomUUID();
+    allFeeData.push({
+      id: lastMonthFeeId,
+      studentId: link.studentId,
+      feePlanId: feePlan.id,
+      totalAmount: feePlan.amount,
+      paidAmount: lastMonthPaidAmount,
+      dueDate: lastMonth,
+      status: lastMonthPaid ? "paid" : lastMonthPartial ? "partial" : "pending",
     });
 
     if (lastMonthPaidAmount > 0) {
-      const receiverId = student.orgId === org1.id ? org1Accountant.id : org2Accountant.id;
-      await prisma.feePayment.create({
-        data: { studentFeeId: lastMonthFee.id, amount: lastMonthPaidAmount, paymentMode: randomElement(PAYMENT_MODES), receivedById: receiverId, receivedAt: new Date(lastMonth.getTime() + randomInt(1, 10) * 24 * 60 * 60 * 1000) },
+      allPaymentData.push({
+        studentFeeId: lastMonthFeeId,
+        amount: lastMonthPaidAmount,
+        paymentMode: randomElement(PAYMENT_MODES),
+        receivedById: accountant.id,
+        receivedAt: new Date(
+          lastMonth.getTime() + randomInt(1, 15) * 24 * 60 * 60 * 1000
+        ),
       });
     }
 
-    // This month fee - some pending
-    const thisMonthPaid = Math.random() < 0.4;
+    // This month fee
+    const thisMonthPaid = Math.random() < 0.5;
     const thisMonthPaidAmount = thisMonthPaid ? feePlan.amount : 0;
 
-    const thisMonthFee = await prisma.studentFee.create({
-      data: {
-        studentId: student.id,
-        feePlanId: feePlan.id,
-        totalAmount: feePlan.amount,
-        paidAmount: thisMonthPaidAmount,
-        dueDate: thisMonth,
-        status: thisMonthPaid ? "paid" : "pending",
-      },
+    const thisMonthFeeId = randomUUID();
+    allFeeData.push({
+      id: thisMonthFeeId,
+      studentId: link.studentId,
+      feePlanId: feePlan.id,
+      totalAmount: feePlan.amount,
+      paidAmount: thisMonthPaidAmount,
+      dueDate: thisMonth,
+      status: thisMonthPaid ? "paid" : "pending",
     });
 
     if (thisMonthPaidAmount > 0) {
-      const receiverId = student.orgId === org1.id ? org1Accountant.id : org2Accountant.id;
-      await prisma.feePayment.create({
-        data: { studentFeeId: thisMonthFee.id, amount: thisMonthPaidAmount, paymentMode: randomElement(PAYMENT_MODES), receivedById: receiverId, receivedAt: new Date() },
+      allPaymentData.push({
+        studentFeeId: thisMonthFeeId,
+        amount: thisMonthPaidAmount,
+        paymentMode: randomElement(PAYMENT_MODES),
+        receivedById: accountant.id,
+        receivedAt: new Date(
+          thisMonth.getTime() + randomInt(0, 10) * 24 * 60 * 60 * 1000
+        ),
       });
     }
   }
 
-  // ============================================
-  // CREATE ATTENDANCE (last 7 days)
-  // ============================================
-  console.log("📋 Creating attendance...");
+  // Bulk insert fees and payments
+  await prisma.studentFee.createMany({ data: allFeeData });
+  console.log(`       ✓ ${allFeeData.length} fee records`);
 
-  const batches = [
-    { batch: batch10Science, teacher: org1Teacher1, orgId: org1.id, branchId: org1Branch1.id },
-    { batch: batch12Commerce, teacher: org1Teacher2, orgId: org1.id, branchId: org1Branch1.id },
-    { batch: batch9General, teacher: org1Branch2Admin, orgId: org1.id, branchId: org1Branch2.id },
-    { batch: org2Batch1, teacher: org2Teacher, orgId: org2.id, branchId: org2Branch1.id },
-    { batch: org2Batch2, teacher: org2Teacher, orgId: org2.id, branchId: org2Branch1.id },
-  ];
+  await prisma.feePayment.createMany({ data: allPaymentData });
+  console.log(`       ✓ ${allPaymentData.length} payments`);
 
-  for (const { batch, teacher, orgId, branchId } of batches) {
-    const batchStudents = allStudents.filter((s) => s.batchId === batch.id);
+  // Phase 11: Attendance (bulk, limited to 10 days)
+  logStep(11, TOTAL_STEPS, "Creating attendance (bulk, last 10 days)...");
 
-    for (let d = 1; d <= 7; d++) {
-      const attendanceDate = new Date(today);
-      attendanceDate.setDate(attendanceDate.getDate() - d);
-      attendanceDate.setHours(0, 0, 0, 0);
+  const currentMonthDates: Date[] = [];
+  for (let d = 0; d < 10; d++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - d);
+    if (date.getDay() !== 0)
+      currentMonthDates.push(new Date(date.setHours(0, 0, 0, 0)));
+  }
 
-      if (attendanceDate.getDay() === 0) continue; // Skip Sunday
+  // Sample 30 batches for attendance
+  const sampledBatches = batches.slice(0, 30);
+  let attendanceSessionCount = 0;
+  let attendanceRecordCount = 0;
 
+  for (const batch of sampledBatches) {
+    const batchStudents = studentParentLinks.filter(
+      (s) => s.batchId === batch.id
+    );
+    if (batchStudents.length === 0) continue;
+
+    const branchTeachers = teachers.filter(
+      (t) => t.branchId === batch.branchId
+    );
+    const createdBy = batch.classTeacherId
+      ? teachers.find((t) => t.id === batch.classTeacherId)
+      : branchTeachers[0];
+    if (!createdBy) continue;
+
+    for (const date of currentMonthDates) {
       try {
         const session = await prisma.attendanceSession.create({
-          data: { orgId, branchId, batchId: batch.id, attendanceDate, createdById: teacher.id },
+          data: {
+            orgId: batch.orgId,
+            branchId: batch.branchId,
+            batchId: batch.id,
+            attendanceDate: date,
+            createdById: createdBy.id,
+          },
         });
+        attendanceSessionCount++;
 
-        for (const student of batchStudents) {
-          await prisma.attendanceRecord.create({
-            data: {
-              attendanceSessionId: session.id,
-              studentId: student.id,
-              status: Math.random() < 0.9 ? "present" : "absent",
-              markedAt: new Date(attendanceDate.getTime() + 9 * 60 * 60 * 1000),
-            },
-          });
-        }
+        const records = batchStudents.map((student) => ({
+          attendanceSessionId: session.id,
+          studentId: student.studentId,
+          status:
+            Math.random() < 0.9 ? ("present" as const) : ("absent" as const),
+          markedAt: new Date(date.getTime() + 9 * 60 * 60 * 1000),
+        }));
+
+        await prisma.attendanceRecord.createMany({ data: records });
+        attendanceRecordCount += records.length;
       } catch {
         continue;
       }
     }
   }
+  console.log(
+    `       ✓ ${attendanceSessionCount} sessions, ${attendanceRecordCount} records`
+  );
 
-  // ============================================
-  // MESSAGE TEMPLATES
-  // ============================================
-  await prisma.messageTemplate.createMany({
-    data: [
-      { orgId: org1.id, type: "absent", content: "Dear Parent, {{studentName}} was absent on {{date}}. - ABC Coaching", isActive: true },
-      { orgId: org1.id, type: "fee_due", content: "Fee of ₹{{amount}} due for {{studentName}} on {{dueDate}}. - ABC Coaching", isActive: true },
-      { orgId: org2.id, type: "absent", content: "Dear Parent, {{studentName}} was absent on {{date}}. - Sunrise School", isActive: true },
-      { orgId: org2.id, type: "fee_due", content: "Fee of ₹{{amount}} due for {{studentName}} on {{dueDate}}. - Sunrise School", isActive: true },
-    ],
-  });
+  // Phase 12: Message Templates
+  logStep(12, TOTAL_STEPS, "Creating message templates...");
+  for (const org of orgs) {
+    await prisma.messageTemplate.createMany({
+      data: [
+        {
+          orgId: org.id,
+          type: "absent",
+          name: "Student Absent",
+          content: `Dear Parent, {{studentName}} was absent on {{date}}. Please contact school for any queries. - ${org.name}`,
+          isActive: true,
+        },
+        {
+          orgId: org.id,
+          type: "fee_due",
+          name: "Fee Due",
+          content: `Fee of ₹{{amount}} is due for {{studentName}} by {{dueDate}}. Please pay on time. - ${org.name}`,
+          isActive: true,
+        },
+        {
+          orgId: org.id,
+          type: "fee_paid",
+          name: "Fee Paid",
+          content: `✓ Payment of ₹{{amount}} received for {{studentName}}. Thank you! - ${org.name}`,
+          isActive: true,
+        },
+        {
+          orgId: org.id,
+          type: "fee_overdue",
+          name: "Fee Overdue Alert",
+          content: `⚠️ Fee of ₹{{amount}} is overdue for {{studentName}} (Due: {{dueDate}}). Please pay immediately. - ${org.name}`,
+          isActive: true,
+        },
+        {
+          orgId: org.id,
+          type: "fee_reminder",
+          name: "Fee Reminder",
+          content: `Reminder: Fee of ₹{{amount}} for {{studentName}} is due in {{days}} days ({{dueDate}}). - ${org.name}`,
+          isActive: true,
+        },
+        {
+          orgId: org.id,
+          type: "birthday",
+          name: "Birthday Wishes",
+          content: `🎂 Happy Birthday {{studentName}}! Wishing you a wonderful day. - ${org.name}`,
+          isActive: true,
+        },
+      ],
+    });
+  }
+  console.log(`       ✓ Message templates created`);
 
   // ============================================
   // SUMMARY
   // ============================================
-  const studentCount = await prisma.student.count();
-  const feeCount = await prisma.studentFee.count();
-  const paymentCount = await prisma.feePayment.count();
-  const attendanceCount = await prisma.attendanceRecord.count();
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-  console.log("\n" + "=".repeat(50));
-  console.log("✅ SEED COMPLETED!");
-  console.log("=".repeat(50));
-  console.log(`\n📊 Summary:`);
-  console.log(`   Organizations: 2`);
-  console.log(`   Branches: 3`);
-  console.log(`   Users: 10`);
-  console.log(`   Batches: 5`);
-  console.log(`   Students: ${studentCount}`);
-  console.log(`   Fee Records: ${feeCount}`);
-  console.log(`   Payments: ${paymentCount}`);
-  console.log(`   Attendance Records: ${attendanceCount}`);
+  console.log("\n" + "=".repeat(60));
+  console.log(`✅ SEED COMPLETED in ${duration}s!`);
+  console.log("=".repeat(60));
+
+  console.log("\n📊 Summary:");
+  console.log(`   Organizations: ${orgs.length}`);
+  console.log(`   Branches: ${branches.length}`);
+  console.log(`   Academic Sessions: ${sessions.length}`);
+  console.log(`   Users: ${users.length} (${teachers.length} teachers)`);
+  console.log(`   Batches: ${batches.length}`);
+  console.log(`   Students: ${allStudentData.length}`);
+  console.log(`   Parents: ${allParentData.length}`);
+  console.log(`   Fee Plans: ${feePlanData.length}`);
+  console.log(`   Fee Records: ${allFeeData.length}`);
+  console.log(`   Payments: ${allPaymentData.length}`);
+  console.log(`   Attendance Sessions: ${attendanceSessionCount}`);
+  console.log(`   Attendance Records: ${attendanceRecordCount}`);
 
   console.log(`\n🔑 Test Credentials (Password: ${DEFAULT_PASSWORD}):`);
-  console.log(`\n   ABC Coaching Center:`);
-  console.log(`      Main Branch Admin: ${org1Admin.employeeId} (${org1Admin.firstName} ${org1Admin.lastName})`);
-  console.log(`      Teacher: ${org1Teacher1.employeeId} (${org1Teacher1.firstName} ${org1Teacher1.lastName})`);
-  console.log(`      Accountant: ${org1Accountant.employeeId}`);
-  console.log(`      South Branch Admin: ${org1Branch2Admin.employeeId}`);
-  console.log(`\n   Sunrise School:`);
-  console.log(`      Admin: ${org2Admin.employeeId} (${org2Admin.firstName} ${org2Admin.lastName})`);
-  console.log(`      Teacher: ${org2Teacher.employeeId}`);
-  console.log("=".repeat(50));
+  console.log("-".repeat(60));
+
+  for (const org of orgs.slice(0, 3)) {
+    console.log(`\n   📌 ${org.name} (${org.type})`);
+    const orgBranches = branches.filter((b) => b.orgId === org.id);
+    for (const branch of orgBranches.slice(0, 1)) {
+      console.log(`      🏢 ${branch.name}`);
+      const branchUsers = users.filter((u) => u.branchId === branch.id);
+      for (const user of branchUsers.slice(0, 2)) {
+        console.log(
+          `         ${user.employeeId} | ${user.role.padEnd(8)} | ${
+            user.firstName
+          } ${user.lastName}`
+        );
+      }
+    }
+  }
+
+  console.log("\n" + "=".repeat(60));
 }
 
 main()

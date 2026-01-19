@@ -71,6 +71,7 @@ export const parentInputSchema = z.object({
   phone: z.string().min(10).max(15),
   relation: z.enum(["father", "mother", "guardian", "other"]),
   photoUrl: photoUrlSchema,
+  isPrimaryContact: z.boolean().optional().default(false),
 });
 
 /**

@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
+import type { Role } from "../../types/auth.js";
+import { ROLES } from "../../config/permissions.js";
 import { NotFoundError, BadRequestError } from "../../utils/error-handler.js";
 import {
   type PaginationParams,
@@ -75,12 +77,35 @@ export async function createFeePlan(
 }
 
 /**
+ * Get the batch ID where the user is class teacher
+ * Returns null if user is not a class teacher of any batch
+ */
+export async function getTeacherBatchId(
+  userId: string,
+  scope: TenantScope
+): Promise<string | null> {
+  const batch = await prisma.batch.findFirst({
+    where: {
+      classTeacherId: userId,
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return batch?.id ?? null;
+}
+
+/**
  * Get pending fees for a branch with pagination
  */
 export async function getPendingFees(
   scope: TenantScope,
   pagination: PaginationParams,
-  filters?: PendingFeesFilters
+  filters?: PendingFeesFilters & { batchId?: string }
 ) {
   // Build where clause
   const where: Prisma.StudentFeeWhereInput = {
@@ -100,6 +125,11 @@ export async function getPendingFees(
   // Add student filter
   if (filters?.studentId) {
     where.studentId = filters.studentId;
+  }
+
+  // Add batch filter (used for teacher role filtering)
+  if (filters?.batchId) {
+    (where.student as Prisma.StudentWhereInput).batchId = filters.batchId;
   }
 
   const [fees, total] = await Promise.all([
@@ -144,6 +174,32 @@ export async function getPendingFees(
   }));
 
   return createPaginatedResponse(formattedFees, total, pagination);
+}
+
+/**
+ * Get pending fees with role-based filtering
+ * - Admin/Accounts: All pending fees
+ * - Teacher: Only fees for students in their batch
+ */
+export async function getPendingFeesForRole(
+  scope: TenantScope,
+  pagination: PaginationParams,
+  role: Role,
+  userId: string,
+  filters?: PendingFeesFilters
+) {
+  // For teacher role, auto-filter by their batch
+  if (role === ROLES.TEACHER) {
+    const teacherBatchId = await getTeacherBatchId(userId, scope);
+    if (!teacherBatchId) {
+      // Teacher has no assigned batch, return empty results
+      return createPaginatedResponse([], 0, pagination);
+    }
+    return getPendingFees(scope, pagination, { ...filters, batchId: teacherBatchId });
+  }
+
+  // For other roles, return all fees
+  return getPendingFees(scope, pagination, filters);
 }
 
 /**

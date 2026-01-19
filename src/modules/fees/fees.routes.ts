@@ -31,7 +31,8 @@ export async function feesRoutes(app: FastifyInstance) {
           properties: {
             ...paginationQueryOpenApi.properties,
             isActive: {
-              type: "boolean",
+              type: "string",
+              enum: ["true", "false"],
               description: "Filter by active status (defaults to true)",
             },
           },
@@ -246,5 +247,152 @@ export async function feesRoutes(app: FastifyInstance) {
       ],
     },
     controller.recordPayment
+  );
+
+  // =====================
+  // Receipt Routes
+  // =====================
+
+  /**
+   * GET /fees/receipts
+   * List receipts with pagination and filters
+   * Requires: FEE_VIEW
+   */
+  app.get(
+    "/receipts",
+    {
+      schema: {
+        tags: ["Receipts"],
+        summary: "List receipts",
+        description: "Returns paginated receipts with optional filters",
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: "object",
+          properties: {
+            ...paginationQueryOpenApi.properties,
+            studentId: { type: "string", format: "uuid" },
+            startDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+            endDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+            search: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "array",
+                items: { type: "object", additionalProperties: true },
+              },
+              pagination: paginationResponseOpenApi,
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_VIEW),
+      ],
+    },
+    controller.listReceipts
+  );
+
+  /**
+   * GET /fees/receipts/:id
+   * Get receipt details
+   * Requires: FEE_VIEW
+   */
+  app.get(
+    "/receipts/:id",
+    {
+      schema: {
+        tags: ["Receipts"],
+        summary: "Get receipt details",
+        description: "Returns detailed information about a specific receipt",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+          },
+          required: ["id"],
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_VIEW),
+      ],
+    },
+    controller.getReceipt
+  );
+
+  /**
+   * GET /fees/receipts/:id/pdf
+   * Download receipt as PDF
+   * Requires: FEE_VIEW
+   */
+  app.get(
+    "/receipts/:id/pdf",
+    {
+      schema: {
+        tags: ["Receipts"],
+        summary: "Download receipt PDF",
+        description: "Generates and downloads the receipt as a PDF file",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+          },
+          required: ["id"],
+        },
+        response: {
+          200: {
+            type: "string",
+            description: "PDF file stream",
+          },
+          404: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_VIEW),
+      ],
+    },
+    controller.downloadReceiptPDF
+  );
+
+  /**
+   * POST /fees/receipts/:id/send
+   * Send receipt via WhatsApp
+   * Requires: FEE_VIEW
+   */
+  app.post(
+    "/receipts/:id/send",
+    {
+      schema: {
+        tags: ["Receipts"],
+        summary: "Send receipt via WhatsApp",
+        description: "Sends the receipt to the student's parent via WhatsApp",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+          },
+          required: ["id"],
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_VIEW),
+      ],
+    },
+    controller.sendReceiptViaWhatsApp
   );
 }

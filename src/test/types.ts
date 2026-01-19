@@ -62,7 +62,14 @@ export interface BatchResponse {
   name: string;
   academicLevel: string;
   stream?: string;
-  teacherId?: string;
+  classTeacherId?: string;
+  sessionId?: string;
+  classTeacher?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    fullName: string;
+  };
   teacher?: {
     id: string;
     firstName: string;
@@ -70,6 +77,7 @@ export interface BatchResponse {
     fullName: string;
   };
   studentCount?: number;
+  periodCount?: number;
   isActive: boolean;
 }
 

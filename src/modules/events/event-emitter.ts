@@ -1,20 +1,25 @@
 import { prisma } from "../../config/database.js";
 
 /**
- * Event types (Phase 1 - Fixed)
- * Do NOT add new events without explicit approval.
+ * Event types for notification system
  *
- * Allowed events:
+ * Events:
  * - attendance_marked: When attendance is saved for a batch
  * - student_absent: When a student is marked absent
  * - fee_created: When a fee is assigned to a student
  * - fee_paid: When a payment is recorded
+ * - fee_overdue: When a fee becomes overdue (scheduled job)
+ * - fee_reminder: Reminder before fee due date (scheduled job)
+ * - birthday: Student birthday notification (scheduled job)
  */
 export const EVENT_TYPES = {
   ATTENDANCE_MARKED: "attendance_marked",
   STUDENT_ABSENT: "student_absent",
   FEE_CREATED: "fee_created",
   FEE_PAID: "fee_paid",
+  FEE_OVERDUE: "fee_overdue",
+  FEE_REMINDER: "fee_reminder",
+  BIRTHDAY: "birthday",
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -12,8 +12,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
   /**
    * GET /attendance?batchId&date
    * Get attendance for a batch on a specific date
-   * Requires: ATTENDANCE_MARK (only admin and teachers)
-   * Additional: Teachers can only access assigned batches (checked in service)
+   * Requires: ATTENDANCE_VIEW (read-only access)
+   * Teachers can view attendance for ANY batch in their branch
    */
   app.get(
     "/",
@@ -21,7 +21,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Attendance"],
         summary: "Get attendance for a batch",
-        description: "Returns attendance records for a batch on a specific date. Teachers can only access their assigned batches.",
+        description: "Returns attendance records for a batch on a specific date. Teachers can view any batch (read-only).",
         security: [{ bearerAuth: [] }],
         querystring: {
           type: "object",
@@ -34,7 +34,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       },
       preHandler: [
         branchContextMiddleware,
-        requirePermission(PERMISSIONS.ATTENDANCE_MARK),
+        requirePermission(PERMISSIONS.ATTENDANCE_VIEW),
       ],
     },
     controller.getAttendance
@@ -86,7 +86,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
   /**
    * GET /attendance/history
    * Get attendance history with pagination and filters
-   * Requires: ATTENDANCE_MARK
+   * Requires: ATTENDANCE_VIEW (read-only access)
+   * Teachers can view history for ALL batches
    */
   app.get(
     "/history",
@@ -94,7 +95,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Attendance"],
         summary: "Get attendance history",
-        description: "Returns paginated list of attendance sessions with stats. Supports filtering by batch and date range.",
+        description: "Returns paginated list of attendance sessions with stats. Supports filtering by batch and date range. Teachers can view all batches.",
         security: [{ bearerAuth: [] }],
         querystring: {
           type: "object",
@@ -146,6 +147,8 @@ export async function attendanceRoutes(app: FastifyInstance) {
                   limit: { type: "number" },
                   total: { type: "number" },
                   totalPages: { type: "number" },
+                  hasNext: { type: "boolean" },
+                  hasPrev: { type: "boolean" },
                 },
               },
             },
@@ -154,7 +157,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
       },
       preHandler: [
         branchContextMiddleware,
-        requirePermission(PERMISSIONS.ATTENDANCE_MARK),
+        requirePermission(PERMISSIONS.ATTENDANCE_VIEW),
       ],
     },
     controller.getAttendanceHistory

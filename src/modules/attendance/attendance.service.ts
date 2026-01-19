@@ -3,7 +3,7 @@ import type { TenantScope } from "../../types/request.js";
 import { BadRequestError } from "../../utils/error-handler.js";
 import { emitEvent, emitEvents, EVENT_TYPES } from "../events/index.js";
 import { ROLES } from "../../config/permissions.js";
-import type { MarkAttendanceInput, GetAttendanceHistoryQuery } from "./attendance.schema.js";
+import type { MarkAttendanceInput } from "./attendance.schema.js";
 import { createPaginatedResponse, calculateSkip, type PaginationParams } from "../../utils/pagination.js";
 import type { Prisma } from "@prisma/client";
 
@@ -15,9 +15,10 @@ function formatFullName(firstName: string, lastName: string): string {
 }
 
 /**
- * Check if user can access a batch (teacher must be assigned)
+ * Check if user can VIEW a batch's attendance (read-only access)
+ * Teachers can view ALL batches in their branch
  */
-export async function canAccessBatch(
+export async function canViewBatch(
   batchId: string,
   userId: string,
   role: string,
@@ -33,15 +34,80 @@ export async function canAccessBatch(
 
   if (!batch) return false;
 
-  // Admin can access all batches
+  // Admin can view all batches
   if (role === ROLES.ADMIN) return true;
 
-  // Teacher can only access assigned batches
+  // Teacher can view any batch in their branch (read-only)
+  if (role === ROLES.TEACHER) return true;
+
+  return false;
+}
+
+/**
+ * Check if user can MARK attendance for a batch (write access)
+ * Teachers can only mark attendance for their assigned batch
+ */
+export async function canMarkBatch(
+  batchId: string,
+  userId: string,
+  role: string,
+  scope: TenantScope
+): Promise<boolean> {
+  const batch = await prisma.batch.findFirst({
+    where: {
+      id: batchId,
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+    },
+  });
+
+  if (!batch) return false;
+
+  // Admin can mark attendance for all batches
+  if (role === ROLES.ADMIN) return true;
+
+  // Teacher can only mark attendance for their assigned batch
   if (role === ROLES.TEACHER) {
-    return batch.teacherId === userId;
+    return batch.classTeacherId === userId;
   }
 
   return false;
+}
+
+/**
+ * @deprecated Use canViewBatch or canMarkBatch instead
+ * Check if user can access a batch (kept for backward compatibility)
+ */
+export async function canAccessBatch(
+  batchId: string,
+  userId: string,
+  role: string,
+  scope: TenantScope
+): Promise<boolean> {
+  return canViewBatch(batchId, userId, role, scope);
+}
+
+/**
+ * Get the batch ID where the user is class teacher
+ * Returns null if user is not a class teacher of any batch
+ */
+export async function getTeacherBatchId(
+  userId: string,
+  scope: TenantScope
+): Promise<string | null> {
+  const batch = await prisma.batch.findFirst({
+    where: {
+      classTeacherId: userId,
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return batch?.id ?? null;
 }
 
 /**

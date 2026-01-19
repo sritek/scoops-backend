@@ -9,8 +9,11 @@ import {
   studentIdParamSchema,
   listFeePlansQuerySchema,
   listPendingFeesQuerySchema,
+  listReceiptsQuerySchema,
+  receiptIdParamSchema,
 } from "./fees.schema.js";
 import * as feesService from "./fees.service.js";
+import * as receiptService from "./receipt.service.js";
 
 /**
  * GET /fees/plans
@@ -73,6 +76,7 @@ export async function createFeePlan(
 /**
  * GET /fees/pending
  * Get pending fees with pagination
+ * Teachers only see fees for students in their batch
  */
 export async function getPendingFees(
   request: ProtectedRequest,
@@ -89,6 +93,7 @@ export async function getPendingFees(
   }
 
   const scope = getTenantScopeFromRequest(request);
+  const { userId, role } = request.userContext;
   const pagination = parsePaginationParams({
     page: String(query.data.page),
     limit: String(query.data.limit),
@@ -98,7 +103,14 @@ export async function getPendingFees(
     studentId: query.data.studentId,
   };
 
-  const result = await feesService.getPendingFees(scope, pagination, filters);
+  // Use role-based filtering (teachers only see their batch fees)
+  const result = await feesService.getPendingFeesForRole(
+    scope,
+    pagination,
+    role,
+    userId,
+    filters
+  );
 
   return reply.code(200).send(result);
 }
@@ -183,9 +195,156 @@ export async function recordPayment(
   const { userId } = request.userContext;
   const result = await feesService.recordPayment(body.data, userId, scope);
 
+  // Automatically create a receipt for the payment
+  const receipt = await receiptService.createReceipt(result.payment.id, scope, userId);
+
   // Use 200 OK since we're updating an existing fee record
   return reply.code(200).send({
-    data: result,
+    data: {
+      ...result,
+      receipt,
+    },
     message: "Payment recorded successfully",
+  });
+}
+
+// =====================
+// Receipt Handlers
+// =====================
+
+/**
+ * GET /fees/receipts
+ * List receipts with pagination
+ */
+export async function listReceipts(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const query = listReceiptsQuerySchema.safeParse(request.query);
+  if (!query.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid query parameters",
+      details: query.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const pagination = parsePaginationParams({
+    page: String(query.data.page),
+    limit: String(query.data.limit),
+  });
+  const filters = {
+    studentId: query.data.studentId,
+    startDate: query.data.startDate,
+    endDate: query.data.endDate,
+    search: query.data.search,
+  };
+
+  const result = await receiptService.getReceipts(scope, pagination, filters);
+
+  return reply.code(200).send(result);
+}
+
+/**
+ * GET /fees/receipts/:id
+ * Get receipt details
+ */
+export async function getReceipt(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const params = receiptIdParamSchema.safeParse(request.params);
+  if (!params.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid receipt ID",
+      details: params.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const receipt = await receiptService.getReceiptById(params.data.id, scope);
+
+  if (!receipt) {
+    return reply.code(404).send({
+      error: "Not Found",
+      message: "Receipt not found",
+    });
+  }
+
+  return reply.code(200).send({ data: receipt });
+}
+
+/**
+ * GET /fees/receipts/:id/pdf
+ * Download receipt as PDF
+ */
+export async function downloadReceiptPDF(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const params = receiptIdParamSchema.safeParse(request.params);
+  if (!params.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid receipt ID",
+      details: params.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const result = await receiptService.generateReceiptPDF(params.data.id, scope);
+
+  if (!result) {
+    return reply.code(404).send({
+      error: "Not Found",
+      message: "Receipt not found",
+    });
+  }
+
+  // Set headers for PDF download
+  reply.header("Content-Type", "application/pdf");
+  reply.header("Content-Disposition", `attachment; filename="${result.fileName}"`);
+
+  return reply.send(result.stream);
+}
+
+/**
+ * POST /fees/receipts/:id/send
+ * Send receipt via WhatsApp
+ */
+export async function sendReceiptViaWhatsApp(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const params = receiptIdParamSchema.safeParse(request.params);
+  if (!params.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid receipt ID",
+      details: params.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const receipt = await receiptService.getReceiptById(params.data.id, scope);
+
+  if (!receipt) {
+    return reply.code(404).send({
+      error: "Not Found",
+      message: "Receipt not found",
+    });
+  }
+
+  // TODO: Implement WhatsApp sending via Gupshup
+  // For now, return a placeholder response
+  return reply.code(200).send({
+    message: "Receipt notification queued for sending",
+    data: {
+      receiptId: receipt.id,
+      receiptNumber: receipt.receiptNumber,
+      studentName: receipt.student.fullName,
+    },
   });
 }

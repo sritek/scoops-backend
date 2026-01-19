@@ -19,7 +19,9 @@ import type {
  */
 const studentInclude = {
   studentParents: {
-    include: {
+    select: {
+      relation: true,
+      isPrimaryContact: true,
       parent: {
         select: {
           id: true,
@@ -319,12 +321,13 @@ async function createAndLinkParents(
       });
     }
 
-    // Link parent to student with relation
+    // Link parent to student with relation and primary contact status
     await tx.studentParent.create({
       data: {
         studentId,
         parentId: parent.id,
         relation: parentInput.relation,
+        isPrimaryContact: parentInput.isPrimaryContact ?? false,
       },
     });
   }
@@ -358,6 +361,7 @@ function formatStudentWithParents(student: {
   updatedAt: Date;
   studentParents: {
     relation: string;
+    isPrimaryContact: boolean;
     parent: {
       id: string;
       firstName: string;
@@ -387,6 +391,7 @@ function formatStudentWithParents(student: {
       phone: sp.parent.phone,
       photoUrl: sp.parent.photoUrl,
       relation: sp.relation,
+      isPrimaryContact: sp.isPrimaryContact,
     })),
   };
 }

@@ -51,6 +51,9 @@ enum EventType {
   student_absent
   fee_created
   fee_paid
+  fee_overdue
+  fee_reminder
+  birthday
 }
 
 enum EventStatus {
@@ -63,6 +66,83 @@ enum NotificationStatus {
   pending
   sent
   failed
+}
+
+enum JobStatus {
+  running
+  completed
+  failed
+  skipped
+}
+
+enum StaffAttendanceStatus {
+  present
+  absent
+  half_day
+  leave
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+}
+
+enum LeaveType {
+  casual
+  sick
+  earned
+  unpaid
+}
+
+// Phase 2B Enums
+enum PaymentLinkStatus {
+  active
+  expired
+  paid
+  cancelled
+}
+
+enum ReportType {
+  attendance_monthly
+  attendance_batch
+  fee_collection
+  fee_defaulters
+  student_performance
+  branch_summary
+}
+
+enum ReportFormat {
+  pdf
+  excel
+}
+
+enum ExamType {
+  unit_test
+  mid_term
+  final
+  practical
+  assignment
+}
+
+enum MessageType {
+  direct
+  broadcast
+  announcement
+}
+
+enum ComplaintStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum ComplaintPriority {
+  low
+  medium
+  high
+  urgent
 }
 
 //////////////////////////
@@ -83,13 +163,29 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches  Branch[]
-  users     User[]
-  students  Student[]
-  parents   Parent[]
-  feePlans  FeePlan[]
-  events    Event[]
-  templates MessageTemplate[]
+  // Notification Settings
+  notificationsEnabled     Boolean @default(true)
+  feeOverdueCheckTime      String  @default("09:00") // HH:mm format
+  feeReminderDays          Int     @default(3)       // Days before due date to send reminder
+  birthdayNotifications    Boolean @default(true)
+  attendanceBufferMinutes  Int     @default(5)       // Minutes after first period to start processing
+
+  // Feature Flags
+  jobsDashboardEnabled Boolean @default(false)
+
+  branches         Branch[]
+  users            User[]
+  students         Student[]
+  parents          Parent[]
+  feePlans         FeePlan[]
+  events           Event[]
+  templates        MessageTemplate[]
+  academicSessions AcademicSession[]
+  subjects         Subject[]
+  periodTemplates  PeriodTemplate[]
+  jobRuns          JobRun[]
+  staffAttendance  StaffAttendance[]
+  receipts         Receipt[]
 }
 
 model Branch {
@@ -134,12 +230,33 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // Staff Profile Fields
+  employmentType   EmploymentType? // full_time | part_time | contract
+  joiningDate      DateTime?
+  department       String?
+  designation      String?
+  salary           Int?            // Basic monthly salary (for Phase 3 payroll)
+  emergencyContact String?
+
   organization Organization @relation(fields: [orgId], references: [id])
   branch       Branch       @relation(fields: [branchId], references: [id])
 
-  batches            Batch[]
-  attendanceSessions AttendanceSession[]
-  payments           FeePayment[]
+  classTeacherBatches Batch[]             @relation("ClassTeacher")
+  attendanceSessions  AttendanceSession[]
+  payments            FeePayment[]
+  periods             Period[]
+  staffAttendance     StaffAttendance[]
+  receiptsGenerated   Receipt[]           @relation("ReceiptReceivedBy")
+  
+  // Phase 2B Relations
+  paymentLinksCreated        PaymentLink[]              @relation("PaymentLinkCreatedBy")
+  reportsRequested           ReportGeneration[]
+  examsCreated               Exam[]                     @relation("ExamCreatedBy")
+  examScoresGraded           ExamScore[]                @relation("ExamScoreGradedBy")
+  conversationParticipations ConversationParticipant[]  @relation("UserParticipant")
+  messagesSent               Message[]                  @relation("MessageSentByUser")
+  complaintsAssigned         Complaint[]                @relation("ComplaintAssignedTo")
+  complaintComments          ComplaintComment[]         @relation("ComplaintCommentByUser")
 }
 
 //////////////////////////
@@ -170,6 +287,11 @@ model Student {
   batchId           String?
   attendanceRecords AttendanceRecord[]
   fees              StudentFee[]
+  receipts          Receipt[]
+  
+  // Phase 2B Relations
+  examScores  ExamScore[]
+  complaints  Complaint[]
 }
 
 model Parent {
@@ -179,18 +301,60 @@ model Parent {
   firstName String
   lastName  String
   phone     String
+  email     String?
   photoUrl  String?  @db.Text // Base64 encoded profile photo
   createdAt DateTime @default(now())
 
   organization Organization? @relation(fields: [orgId], references: [id])
   branch       Branch        @relation(fields: [branchId], references: [id])
   students     StudentParent[]
+  otpCodes     OtpCode[]
+  sessions     ParentSession[]
+  
+  // Phase 2B Relations
+  conversationParticipations ConversationParticipant[] @relation("ParentParticipant")
+  messagesSent               Message[]                 @relation("MessageSentByParent")
+  complaintsSubmitted        Complaint[]               @relation("ComplaintSubmittedByParent")
+  complaintComments          ComplaintComment[]        @relation("ComplaintCommentByParent")
+}
+
+// OTP codes for parent login
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String
+  parentId  String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@index([phone, expiresAt])
+  @@index([parentId])
+}
+
+// Parent session tokens for authenticated access
+model ParentSession {
+  id         String   @id @default(uuid())
+  parentId   String
+  token      String   @unique
+  expiresAt  DateTime
+  deviceInfo String?  // JSON with device details
+  createdAt  DateTime @default(now())
+
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@index([parentId])
+  @@index([token])
 }
 
 model StudentParent {
-  studentId String
-  parentId  String
-  relation  String // father | mother | guardian
+  studentId        String
+  parentId         String
+  relation         String // father | mother | guardian
+  isPrimaryContact Boolean @default(false)
 
   student Student @relation(fields: [studentId], references: [id])
   parent  Parent  @relation(fields: [parentId], references: [id])
@@ -199,25 +363,122 @@ model StudentParent {
 }
 
 //////////////////////////
+// ACADEMIC SESSIONS
+//////////////////////////
+
+model AcademicSession {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String // "2025-26"
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  batches      Batch[]
+}
+
+//////////////////////////
+// SUBJECTS
+//////////////////////////
+
+model Subject {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String // "Mathematics"
+  code      String // "MATH"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  periods      Period[]
+  exams        Exam[]
+
+  @@unique([orgId, code])
+}
+
+//////////////////////////
+// PERIOD TEMPLATES
+//////////////////////////
+
+model PeriodTemplate {
+  id         String   @id @default(uuid())
+  orgId      String
+  name       String // "Default", "Half Day"
+  isDefault  Boolean  @default(false)
+  activeDays Int[]    @default([1, 2, 3, 4, 5, 6]) // 1=Mon to 6=Sat
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  organization Organization         @relation(fields: [orgId], references: [id])
+  slots        PeriodTemplateSlot[]
+}
+
+model PeriodTemplateSlot {
+  id           String  @id @default(uuid())
+  templateId   String
+  periodNumber Int // 1, 2, 3... (0 for breaks)
+  startTime    String // "08:00"
+  endTime      String // "08:45"
+  isBreak      Boolean @default(false)
+  breakName    String? // "Lunch", "Recess"
+
+  template PeriodTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, periodNumber])
+}
+
+//////////////////////////
 // BATCHES & ATTENDANCE
 //////////////////////////
 
 model Batch {
-  id            String   @id @default(uuid())
-  orgId         String
-  branchId      String
-  name          String
-  academicLevel String // primary | secondary | senior_secondary | coaching
-  stream        String?
-  teacherId     String?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  orgId          String
+  branchId       String
+  sessionId      String? // Academic session
+  name           String
+  academicLevel  String // primary | secondary | senior_secondary | coaching
+  stream         String?
+  classTeacherId String? // Primary class teacher
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   branch             Branch              @relation(fields: [branchId], references: [id])
+  session            AcademicSession?    @relation(fields: [sessionId], references: [id])
   students           Student[]
-  teacher            User?               @relation(fields: [teacherId], references: [id])
+  classTeacher       User?               @relation("ClassTeacher", fields: [classTeacherId], references: [id])
   attendanceSessions AttendanceSession[]
+  periods            Period[]
+  
+  // Phase 2B Relations
+  exams         Exam[]
+  conversations Conversation[]
+}
+
+//////////////////////////
+// SCHEDULE (PERIODS)
+//////////////////////////
+
+model Period {
+  id           String  @id @default(uuid())
+  batchId      String
+  dayOfWeek    Int // 1=Mon, 2=Tue...6=Sat (0=Sun if needed)
+  periodNumber Int
+  startTime    String // "08:00"
+  endTime      String // "08:45"
+  subjectId    String?
+  teacherId    String?
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id])
+  teacher User?    @relation(fields: [teacherId], references: [id])
+
+  @@unique([batchId, dayOfWeek, periodNumber])
 }
 
 model AttendanceSession {
@@ -281,6 +542,9 @@ model StudentFee {
   student  Student      @relation(fields: [studentId], references: [id])
   feePlan  FeePlan      @relation(fields: [feePlanId], references: [id])
   payments FeePayment[]
+  
+  // Phase 2B Relations
+  paymentLinks PaymentLink[]
 }
 
 model FeePayment {
@@ -293,6 +557,7 @@ model FeePayment {
 
   studentFee StudentFee @relation(fields: [studentFeeId], references: [id])
   receivedBy User       @relation(fields: [receivedById], references: [id])
+  receipt    Receipt?
 }
 
 //////////////////////////
@@ -338,8 +603,312 @@ model NotificationLog {
   errorMessage      String?
   entityType        String?
   entityId          String?
+  metadata          Json?              // Delivery status, timestamps, etc.
   sentAt            DateTime           @default(now())
 
   branch   Branch          @relation(fields: [branchId], references: [id])
   template MessageTemplate @relation(fields: [templateId], references: [id])
+}
+
+//////////////////////////
+// JOB RUNS (Scheduler Tracking)
+//////////////////////////
+
+model JobRun {
+  id               String    @id @default(uuid())
+  orgId            String?   // null for global/cross-org jobs
+  branchId         String?
+  jobName          String    // "event-processor", "fee-reminder", etc.
+  status           JobStatus @default(running)
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  durationMs       Int?
+  eventsEmitted    Int       @default(0)
+  recordsProcessed Int       @default(0)
+  errorMessage     String?   @db.Text
+  metadata         String?   @db.Text // JSON for extra details
+
+  organization Organization? @relation(fields: [orgId], references: [id])
+
+  @@index([jobName, startedAt])
+  @@index([status])
+  @@index([orgId])
+}
+
+//////////////////////////
+// STAFF ATTENDANCE
+//////////////////////////
+
+model StaffAttendance {
+  id        String                @id @default(uuid())
+  orgId     String
+  branchId  String
+  userId    String
+  date      DateTime              @db.Date
+  checkIn   DateTime?
+  checkOut  DateTime?
+  status    StaffAttendanceStatus @default(present)
+  leaveType LeaveType?
+  notes     String?
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([userId, date])
+  @@index([orgId, branchId, date])
+}
+
+//////////////////////////
+// RECEIPTS
+//////////////////////////
+
+model Receipt {
+  id            String      @id @default(uuid())
+  orgId         String
+  branchId      String
+  receiptNumber String      // Auto-generated: ORG-2026-00001
+  paymentId     String      @unique
+  studentId     String
+  studentFeeId  String
+  amount        Int
+  paymentMode   PaymentMode
+  receivedById  String
+  generatedAt   DateTime    @default(now())
+  pdfPath       String?     // S3/local path to generated PDF
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  payment      FeePayment   @relation(fields: [paymentId], references: [id])
+  student      Student      @relation(fields: [studentId], references: [id])
+  receivedBy   User         @relation("ReceiptReceivedBy", fields: [receivedById], references: [id])
+
+  @@unique([orgId, receiptNumber])
+  @@index([orgId, branchId])
+  @@index([studentId])
+}
+
+model ReceiptSequence {
+  id         String @id @default(uuid())
+  orgId      String
+  year       Int
+  lastNumber Int    @default(0)
+
+  @@unique([orgId, year])
+}
+
+//////////////////////////
+// PHASE 2B: PAYMENT LINKS
+//////////////////////////
+
+model PaymentLink {
+  id              String            @id @default(uuid())
+  orgId           String
+  branchId        String
+  studentFeeId    String
+  shortCode       String            @unique // "abc123" for short URLs
+  amount          Int
+  description     String?
+  razorpayLinkId  String?           @unique
+  razorpayUrl     String?
+  status          PaymentLinkStatus @default(active)
+  expiresAt       DateTime
+  paidAt          DateTime?
+  createdById     String
+  createdAt       DateTime          @default(now())
+
+  studentFee StudentFee @relation(fields: [studentFeeId], references: [id])
+  createdBy  User       @relation("PaymentLinkCreatedBy", fields: [createdById], references: [id])
+
+  @@index([shortCode])
+  @@index([studentFeeId])
+  @@index([orgId, status])
+}
+
+//////////////////////////
+// PHASE 2B: REPORTS
+//////////////////////////
+
+model ReportGeneration {
+  id            String       @id @default(uuid())
+  orgId         String
+  branchId      String?      // null for cross-branch reports
+  type          ReportType
+  format        ReportFormat
+  parameters    Json         // Date range, filters
+  filePath      String?      // Generated file path
+  status        String       @default("pending") // pending, generating, completed, failed
+  requestedById String
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+
+  requestedBy User @relation(fields: [requestedById], references: [id])
+
+  @@index([orgId, type])
+  @@index([status])
+}
+
+//////////////////////////
+// PHASE 2B: EXAMS & MARKS
+//////////////////////////
+
+model Exam {
+  id           String    @id @default(uuid())
+  orgId        String
+  branchId     String
+  batchId      String
+  subjectId    String?   // null for combined exams
+  name         String    // "Unit Test 1", "Mid-Term Exam"
+  type         ExamType
+  totalMarks   Int
+  passingMarks Int
+  examDate     DateTime
+  isPublished  Boolean   @default(false)
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  batch     Batch       @relation(fields: [batchId], references: [id])
+  subject   Subject?    @relation(fields: [subjectId], references: [id])
+  createdBy User        @relation("ExamCreatedBy", fields: [createdById], references: [id])
+  scores    ExamScore[]
+
+  @@index([batchId, examDate])
+  @@index([orgId, branchId])
+}
+
+model ExamScore {
+  id            String   @id @default(uuid())
+  examId        String
+  studentId     String
+  marksObtained Int?     // null = absent
+  remarks       String?
+  gradedById    String
+  gradedAt      DateTime @default(now())
+
+  exam     Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student  Student @relation(fields: [studentId], references: [id])
+  gradedBy User    @relation("ExamScoreGradedBy", fields: [gradedById], references: [id])
+
+  @@unique([examId, studentId])
+}
+
+//////////////////////////
+// PHASE 2B: MESSAGING
+//////////////////////////
+
+model Conversation {
+  id          String      @id @default(uuid())
+  orgId       String
+  branchId    String
+  type        MessageType
+  title       String?     // For broadcasts/announcements
+  batchId     String?     // For batch broadcasts
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  batch        Batch?                    @relation(fields: [batchId], references: [id])
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([orgId, branchId])
+  @@index([batchId])
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String?   // Staff/Teacher
+  parentId       String?   // Parent
+  lastReadAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?        @relation("UserParticipant", fields: [userId], references: [id])
+  parent       Parent?      @relation("ParentParticipant", fields: [parentId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@unique([conversationId, parentId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderUserId   String?
+  senderParentId String?
+  content        String   @db.Text
+  attachmentUrl  String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser   User?        @relation("MessageSentByUser", fields: [senderUserId], references: [id])
+  senderParent Parent?      @relation("MessageSentByParent", fields: [senderParentId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+//////////////////////////
+// PHASE 2B: COMPLAINTS
+//////////////////////////
+
+model Complaint {
+  id           String            @id @default(uuid())
+  orgId        String
+  branchId     String
+  ticketNumber String            @unique // AUTO-001
+  subject      String
+  description  String            @db.Text
+  category     String            // "fees", "academics", "facilities", "staff"
+  priority     ComplaintPriority @default(medium)
+  status       ComplaintStatus   @default(open)
+
+  // Submitter (either parent or student context)
+  submittedByParentId String?
+  studentId           String?   // Which student is this about
+
+  // Assignment
+  assignedToId String?
+  resolvedAt   DateTime?
+  resolution   String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  submittedByParent Parent?            @relation("ComplaintSubmittedByParent", fields: [submittedByParentId], references: [id])
+  student           Student?           @relation(fields: [studentId], references: [id])
+  assignedTo        User?              @relation("ComplaintAssignedTo", fields: [assignedToId], references: [id])
+  comments          ComplaintComment[]
+
+  @@index([orgId, status])
+  @@index([ticketNumber])
+  @@index([submittedByParentId])
+}
+
+model ComplaintComment {
+  id             String   @id @default(uuid())
+  complaintId    String
+  content        String   @db.Text
+  authorUserId   String?
+  authorParentId String?
+  isInternal     Boolean  @default(false) // Internal notes not visible to parent
+  createdAt      DateTime @default(now())
+
+  complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  authorUser   User?     @relation("ComplaintCommentByUser", fields: [authorUserId], references: [id])
+  authorParent Parent?   @relation("ComplaintCommentByParent", fields: [authorParentId], references: [id])
+
+  @@index([complaintId, createdAt])
+}
+
+//////////////////////////
+// PHASE 2B: TICKET SEQUENCE
+//////////////////////////
+
+model ComplaintSequence {
+  id         String @id @default(uuid())
+  orgId      String @unique
+  lastNumber Int    @default(0)
 }

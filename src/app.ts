@@ -23,6 +23,21 @@ import { dashboardRoutes } from "./modules/dashboard/index.js";
 import { usersRoutes } from "./modules/users/index.js";
 import { branchRoutes } from "./modules/branch/index.js";
 import { settingsRoutes } from "./modules/settings/index.js";
+import { sessionsRoutes } from "./modules/sessions/index.js";
+import { subjectsRoutes } from "./modules/subjects/index.js";
+import { periodTemplatesRoutes } from "./modules/period-templates/index.js";
+import { notificationsRoutes } from "./modules/notifications/index.js";
+import { jobsRoutes } from "./modules/jobs/index.js";
+import { staffRoutes } from "./modules/staff/index.js";
+import { parentAuthRoutes } from "./modules/auth/parent-auth.routes.js";
+import { webhookRoutes } from "./modules/notifications/webhook.routes.js";
+import { paymentLinkRoutes, publicPaymentRoutes, razorpayWebhookRoutes } from "./modules/payments/index.js";
+import { reportsRoutes } from "./modules/reports/index.js";
+import { examsRoutes } from "./modules/exams/index.js";
+import { messagingRoutes } from "./modules/messaging/index.js";
+import { complaintsRoutes } from "./modules/complaints/index.js";
+import { analyticsRoutes } from "./modules/analytics/index.js";
+import { schedulerPlugin } from "./scheduler/index.js";
 
 const log = createModuleLogger("app");
 
@@ -33,6 +48,9 @@ const log = createModuleLogger("app");
 const PUBLIC_ROUTES = [
   "/health",
   "/api/v1/auth/login", // Login endpoint
+  "/api/v1/auth/parent", // Parent OTP auth (public)
+  "/api/v1/webhooks", // Webhook endpoints (public)
+  "/api/v1/pay", // Public payment pages
   "/docs", // Swagger UI (has own auth hook in production)
   "/docs/json", // OpenAPI JSON spec
   "/docs/yaml", // OpenAPI YAML spec
@@ -199,7 +217,64 @@ export async function buildApp() {
   await app.register(settingsRoutes, { prefix: "/api/v1/settings" });
   log.debug("Route registered: /api/v1/settings");
 
+  await app.register(sessionsRoutes, { prefix: "/api/v1/sessions" });
+  log.debug("Route registered: /api/v1/sessions");
+
+  await app.register(subjectsRoutes, { prefix: "/api/v1/subjects" });
+  log.debug("Route registered: /api/v1/subjects");
+
+  await app.register(periodTemplatesRoutes, { prefix: "/api/v1/period-templates" });
+  log.debug("Route registered: /api/v1/period-templates");
+
+  await app.register(notificationsRoutes, { prefix: "/api/v1/notifications" });
+  log.debug("Route registered: /api/v1/notifications");
+
+  await app.register(jobsRoutes, { prefix: "/api/v1/jobs" });
+  log.debug("Route registered: /api/v1/jobs");
+
+  await app.register(staffRoutes, { prefix: "/api/v1/staff" });
+  log.debug("Route registered: /api/v1/staff");
+
+  await app.register(paymentLinkRoutes, { prefix: "/api/v1/payment-links" });
+  log.debug("Route registered: /api/v1/payment-links");
+
+  await app.register(reportsRoutes, { prefix: "/api/v1/reports" });
+  log.debug("Route registered: /api/v1/reports");
+
+  await app.register(examsRoutes, { prefix: "/api/v1/exams" });
+  log.debug("Route registered: /api/v1/exams");
+
+  await app.register(messagingRoutes, { prefix: "/api/v1/messages" });
+  log.debug("Route registered: /api/v1/messages");
+
+  await app.register(complaintsRoutes, { prefix: "/api/v1/complaints" });
+  log.debug("Route registered: /api/v1/complaints");
+
+  await app.register(analyticsRoutes, { prefix: "/api/v1/analytics" });
+  log.debug("Route registered: /api/v1/analytics");
+
+  // Public payment pages (no auth required)
+  await app.register(publicPaymentRoutes, { prefix: "/api/v1/pay" });
+  log.debug("Route registered: /api/v1/pay (public)");
+
+  // Parent auth routes (public - OTP based login)
+  await app.register(parentAuthRoutes, { prefix: "/api/v1/auth/parent" });
+  log.debug("Route registered: /api/v1/auth/parent (public)");
+
+  // Webhook routes (public - for external service callbacks)
+  await app.register(webhookRoutes, { prefix: "/api/v1/webhooks" });
+  log.debug("Route registered: /api/v1/webhooks (public)");
+
+  // Razorpay webhook
+  await app.register(razorpayWebhookRoutes, { prefix: "/api/v1/webhooks" });
+  log.debug("Route registered: /api/v1/webhooks/razorpay (public)");
+
   log.info("All routes registered");
+
+  // Register scheduler for background jobs
+  log.info("Registering scheduler...");
+  await app.register(schedulerPlugin);
+  log.info("Scheduler registered");
 
   return app;
 }

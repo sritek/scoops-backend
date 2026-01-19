@@ -10,6 +10,7 @@ export const PERMISSIONS = {
   STUDENT_EDIT: "STUDENT_EDIT",
 
   // Attendance module
+  ATTENDANCE_VIEW: "ATTENDANCE_VIEW",
   ATTENDANCE_MARK: "ATTENDANCE_MARK",
 
   // Fee module
@@ -32,6 +33,7 @@ export const PERMISSIONS = {
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   STUDENT_VIEW: "View student list and profiles",
   STUDENT_EDIT: "Create, update, deactivate students",
+  ATTENDANCE_VIEW: "View attendance records (read-only)",
   ATTENDANCE_MARK: "Mark attendance for batches",
   FEE_VIEW: "View fee plans and payment status",
   FEE_UPDATE: "Record payments, update fee status",
@@ -59,6 +61,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
     PERMISSIONS.STUDENT_VIEW,
     PERMISSIONS.STUDENT_EDIT,
+    PERMISSIONS.ATTENDANCE_VIEW,
     PERMISSIONS.ATTENDANCE_MARK,
     PERMISSIONS.FEE_VIEW,
     PERMISSIONS.FEE_UPDATE,
@@ -68,7 +71,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
   teacher: [
     PERMISSIONS.STUDENT_VIEW,
-    PERMISSIONS.ATTENDANCE_MARK,
+    PERMISSIONS.ATTENDANCE_VIEW,  // Can view all batches attendance
+    PERMISSIONS.ATTENDANCE_MARK,  // Can mark only own batch (enforced in controller)
+    PERMISSIONS.FEE_VIEW,         // Can view fees for own batch only (enforced in service)
     PERMISSIONS.DASHBOARD_VIEW,
   ],
   accounts: [
@@ -76,6 +81,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.FEE_VIEW,
     PERMISSIONS.FEE_UPDATE,
     PERMISSIONS.DASHBOARD_VIEW,
+    // NO attendance permissions - accounts cannot access attendance module
   ],
   staff: [
     PERMISSIONS.STUDENT_VIEW,

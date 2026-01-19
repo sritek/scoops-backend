@@ -11,7 +11,7 @@ const envSchema = z.object({
     .int("PORT must be an integer")
     .min(1, "PORT must be at least 1")
     .max(65535, "PORT must be at most 65535")
-    .default(3000),
+    .default(3001),
 
   HOST: z.string().min(1, "HOST cannot be empty").default("0.0.0.0"),
 
@@ -71,6 +71,23 @@ const envSchema = z.object({
       (val) => /^\d+[smhd]$/.test(val),
       "JWT_EXPIRES_IN must be a valid duration (e.g., '7d', '24h', '60m')"
     ),
+
+  // Gupshup WhatsApp configuration (optional - falls back to stub if not set)
+  GUPSHUP_API_KEY: z.string().optional(),
+  GUPSHUP_APP_NAME: z.string().optional(),
+  GUPSHUP_SOURCE_NUMBER: z.string().optional(), // WhatsApp number registered with Gupshup
+  GUPSHUP_WEBHOOK_SECRET: z.string().optional(), // For verifying webhook callbacks
+
+  // WhatsApp mode: "stub" (development), "gupshup" (production)
+  WHATSAPP_MODE: z.enum(["stub", "gupshup"]).default("stub"),
+
+  // Razorpay configuration (optional - required for payment links)
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+
+  // Base URL for generating payment links
+  APP_BASE_URL: z.string().default("http://localhost:3000"),
 });
 
 /**

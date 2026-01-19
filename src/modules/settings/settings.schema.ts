@@ -20,6 +20,15 @@ const logoUrlSchema = z
   .nullable();
 
 /**
+ * HH:mm time format validation
+ */
+const timeFormatSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, {
+    message: "Time must be in HH:mm format (e.g., 09:00)",
+  });
+
+/**
  * Schema for updating organization settings
  */
 export const updateOrganizationSchema = z.object({
@@ -32,6 +41,14 @@ export const updateOrganizationSchema = z.object({
   phone: z.string().min(10).max(15).optional().nullable(),
   email: z.string().email().max(255).optional().nullable(),
   address: z.string().max(500).optional().nullable(),
+  // Notification settings
+  notificationsEnabled: z.boolean().optional(),
+  feeOverdueCheckTime: timeFormatSchema.optional(),
+  feeReminderDays: z.number().int().min(1).max(30).optional(),
+  birthdayNotifications: z.boolean().optional(),
+  attendanceBufferMinutes: z.number().int().min(0).max(60).optional(),
+  // Feature flags
+  jobsDashboardEnabled: z.boolean().optional(),
 });
 
 export type UpdateOrganizationInput = z.infer<typeof updateOrganizationSchema>;
@@ -51,7 +68,7 @@ export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
  * Schema for creating message template
  */
 export const createTemplateSchema = z.object({
-  type: z.enum(["absent", "fee_due", "fee_paid"]),
+  type: z.enum(["absent", "fee_due", "fee_paid", "fee_overdue", "fee_reminder", "birthday"]),
   name: z.string().min(1).max(255),
   content: z.string().min(1).max(1000),
   isActive: z.boolean().default(true),

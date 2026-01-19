@@ -95,7 +95,7 @@ describe("Happy Path Flows", () => {
       // Get a batch assigned to teacher1
       const batch = await prisma.batch.findFirst({
         where: {
-          teacher: {
+          classTeacher: {
             email: USERS.teacher1.email,
           },
         },
@@ -107,7 +107,7 @@ describe("Happy Path Flows", () => {
       });
 
       teacherBatchId = batch?.id ?? "";
-      teacherStudentIds = batch?.students.map((s) => s.id) ?? [];
+      teacherStudentIds = batch?.students.map((s: { id: string }) => s.id) ?? [];
     });
 
     it("should mark attendance for assigned batch (201)", async () => {
@@ -405,7 +405,7 @@ describe("Happy Path Flows", () => {
         .put(`/api/v1/batches/${createdBatchId}`)
         .set(await getAuthHeaders(USERS.admin.email))
         .send({
-          teacherId: teacher?.id,
+          classTeacherId: teacher?.id,
         });
 
       expect(response.status).toBe(200);
@@ -415,7 +415,7 @@ describe("Happy Path Flows", () => {
         where: { id: createdBatchId },
       });
 
-      expect(batch?.teacherId).toBe(teacher?.id);
+      expect(batch?.classTeacherId).toBe(teacher?.id);
     });
   });
 

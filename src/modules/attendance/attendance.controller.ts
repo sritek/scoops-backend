@@ -12,6 +12,7 @@ import { parsePaginationParams } from "../../utils/pagination.js";
 /**
  * GET /attendance?batchId&date
  * Get attendance for a batch on a specific date
+ * Teachers can view attendance for ANY batch (read-only)
  */
 export async function getAttendance(
   request: ProtectedRequest,
@@ -29,18 +30,18 @@ export async function getAttendance(
   const scope = getTenantScopeFromRequest(request);
   const { userId, role } = request.userContext;
 
-  // Check if user can access this batch
-  const canAccess = await attendanceService.canAccessBatch(
+  // Check if user can VIEW this batch (read-only access)
+  const canView = await attendanceService.canViewBatch(
     query.data.batchId,
     userId,
     role,
     scope
   );
 
-  if (!canAccess) {
+  if (!canView) {
     return reply.code(403).send({
       error: "Forbidden",
-      message: "You do not have access to this batch",
+      message: "You do not have access to view this batch",
     });
   }
 
@@ -58,6 +59,7 @@ export async function getAttendance(
 /**
  * POST /attendance/mark
  * Mark attendance for a batch
+ * Teachers can only mark attendance for their assigned batch
  */
 export async function markAttendance(
   request: ProtectedRequest,
@@ -75,18 +77,18 @@ export async function markAttendance(
   const scope = getTenantScopeFromRequest(request);
   const { userId, role } = request.userContext;
 
-  // Check if user can access this batch
-  const canAccess = await attendanceService.canAccessBatch(
+  // Check if user can MARK attendance for this batch (write access)
+  const canMark = await attendanceService.canMarkBatch(
     body.data.batchId,
     userId,
     role,
     scope
   );
 
-  if (!canAccess) {
+  if (!canMark) {
     return reply.code(403).send({
       error: "Forbidden",
-      message: "You do not have access to this batch",
+      message: "You can only mark attendance for your assigned batch",
     });
   }
 
@@ -105,6 +107,7 @@ export async function markAttendance(
 /**
  * GET /attendance/history
  * Get attendance history with pagination and filters
+ * Teachers can view history for ALL batches (read-only)
  */
 export async function getAttendanceHistory(
   request: ProtectedRequest,
@@ -122,19 +125,19 @@ export async function getAttendanceHistory(
   const scope = getTenantScopeFromRequest(request);
   const { userId, role } = request.userContext;
 
-  // If filtering by batch, check access
+  // If filtering by batch, check view access
   if (query.data.batchId) {
-    const canAccess = await attendanceService.canAccessBatch(
+    const canView = await attendanceService.canViewBatch(
       query.data.batchId,
       userId,
       role,
       scope
     );
 
-    if (!canAccess) {
+    if (!canView) {
       return reply.code(403).send({
         error: "Forbidden",
-        message: "You do not have access to this batch",
+        message: "You do not have access to view this batch",
       });
     }
   }

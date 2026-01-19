@@ -96,4 +96,64 @@ export async function dashboardRoutes(app: FastifyInstance) {
     },
     controller.getFeesCollectedToday
   );
+
+  /**
+   * GET /dashboard/enhanced
+   * Get enhanced dashboard with action items and trends
+   * Requires: DASHBOARD_VIEW
+   */
+  app.get(
+    "/enhanced",
+    {
+      schema: {
+        tags: ["Dashboard"],
+        summary: "Get enhanced dashboard",
+        description: "Returns role-specific dashboard with action items, trends, upcoming birthdays, and more",
+        security: [{ bearerAuth: [] }],
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              data: {
+                type: "object",
+                properties: {
+                  attendance: { type: "object" },
+                  pendingFees: { type: "object" },
+                  feesCollected: { type: "object" },
+                  actionItems: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: { type: "string" },
+                        priority: { type: "string" },
+                        title: { type: "string" },
+                        description: { type: "string" },
+                        actionUrl: { type: "string" },
+                        count: { type: "number" },
+                      },
+                    },
+                  },
+                  trends: {
+                    type: "object",
+                    properties: {
+                      attendance: { type: "array" },
+                      feeCollection: { type: "array" },
+                    },
+                  },
+                  upcomingBirthdays: { type: "array" },
+                  staffAttendance: { type: "object" },
+                },
+              },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.DASHBOARD_VIEW),
+      ],
+    },
+    controller.getEnhancedDashboard
+  );
 }
