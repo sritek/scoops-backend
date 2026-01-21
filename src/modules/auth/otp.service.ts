@@ -7,8 +7,12 @@
  */
 
 import { prisma } from "../../config/database.js";
+import { env } from "../../config/env.js";
 import { sendOTP } from "../notifications/whatsapp.provider.js";
-import { normalizePhone, isValidIndianPhone } from "../notifications/whatsapp.provider.js";
+import {
+  normalizePhone,
+  isValidIndianPhone,
+} from "../notifications/whatsapp.provider.js";
 import { BadRequestError, NotFoundError } from "../../utils/error-handler.js";
 
 /**
@@ -20,6 +24,12 @@ const OTP_CONFIG = {
   maxAttempts: 3,
   cooldownMinutes: 1,
 };
+
+/**
+ * Dev mode bypass - allows using fixed OTP "123456" in development
+ */
+const DEV_OTP = "123456";
+const isDevMode = env.NODE_ENV === "development";
 
 /**
  * Generate a random OTP
@@ -56,7 +66,9 @@ export interface OTPVerifyResult {
 /**
  * Request OTP for parent login
  */
-export async function requestParentOTP(phone: string): Promise<OTPRequestResult> {
+export async function requestParentOTP(
+  phone: string
+): Promise<OTPRequestResult> {
   // Validate phone format
   if (!isValidIndianPhone(phone)) {
     throw new BadRequestError("Invalid phone number format");
@@ -78,6 +90,18 @@ export async function requestParentOTP(phone: string): Promise<OTPRequestResult>
     throw new NotFoundError("No account found with this phone number");
   }
 
+  // Dev mode bypass - skip OTP generation and sending
+  if (isDevMode) {
+    console.log(
+      `[DEV] OTP bypass enabled for ${phone}. Use ${DEV_OTP} to login.`
+    );
+    return {
+      success: true,
+      message: "OTP sent successfully (dev mode - use 123456)",
+      expiresAt: new Date(Date.now() + OTP_CONFIG.expiryMinutes * 60 * 1000),
+    };
+  }
+
   // Check for cooldown (rate limiting)
   const recentOTP = await prisma.otpCode.findFirst({
     where: {
@@ -93,7 +117,9 @@ export async function requestParentOTP(phone: string): Promise<OTPRequestResult>
 
   if (recentOTP) {
     const cooldownRemaining = Math.ceil(
-      (OTP_CONFIG.cooldownMinutes * 60 * 1000 - (Date.now() - recentOTP.createdAt.getTime())) / 1000
+      (OTP_CONFIG.cooldownMinutes * 60 * 1000 -
+        (Date.now() - recentOTP.createdAt.getTime())) /
+        1000
     );
     return {
       success: false,
@@ -145,6 +171,38 @@ export async function verifyParentOTP(
 
   const normalizedPhone = normalizePhone(phone);
 
+  // Dev mode bypass - accept fixed OTP "123456"
+  if (isDevMode && code === DEV_OTP) {
+    const parent = await prisma.parent.findFirst({
+      where: { phone: { contains: phone.slice(-10) } },
+    });
+
+    if (!parent) {
+      return {
+        success: false,
+        message: "No account found with this phone number",
+      };
+    }
+
+    const sessionToken = generateSessionToken();
+    await prisma.parentSession.create({
+      data: {
+        parentId: parent.id,
+        token: sessionToken,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        deviceInfo: null,
+      },
+    });
+
+    console.log(`[DEV] Parent login successful for ${phone}`);
+    return {
+      success: true,
+      message: "Login successful",
+      parentId: parent.id,
+      token: sessionToken,
+    };
+  }
+
   // Find valid OTP
   const otpRecord = await prisma.otpCode.findFirst({
     where: {
@@ -194,7 +252,9 @@ export async function verifyParentOTP(
     const remainingAttempts = OTP_CONFIG.maxAttempts - otpRecord.attempts - 1;
     return {
       success: false,
-      message: `Invalid OTP. ${remainingAttempts} attempt${remainingAttempts !== 1 ? "s" : ""} remaining.`,
+      message: `Invalid OTP. ${remainingAttempts} attempt${
+        remainingAttempts !== 1 ? "s" : ""
+      } remaining.`,
     };
   }
 
@@ -230,7 +290,8 @@ export async function verifyParentOTP(
  * Generate a secure session token
  */
 function generateSessionToken(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let token = "";
   for (let i = 0; i < 64; i++) {
     token += chars[Math.floor(Math.random() * chars.length)];
@@ -298,7 +359,10 @@ export async function logoutParent(token: string): Promise<boolean> {
 /**
  * Clean up expired OTPs and sessions (call periodically)
  */
-export async function cleanupExpired(): Promise<{ otps: number; sessions: number }> {
+export async function cleanupExpired(): Promise<{
+  otps: number;
+  sessions: number;
+}> {
   const [otpResult, sessionResult] = await Promise.all([
     prisma.otpCode.deleteMany({
       where: {

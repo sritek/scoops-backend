@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { branchContextMiddleware } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
-import { PERMISSIONS } from "../../config/permissions.js";
+import { PERMISSIONS } from "../../config/permissions";
 import {
   listNotifications,
   getNotificationStats,

@@ -1,1 +1,1 @@
-export { feesRoutes } from "./fees.routes.js";
+export { feesRoutes } from "./fees.routes";

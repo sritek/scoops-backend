@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
-import { PERMISSIONS } from "../../config/permissions.js";
+import { PERMISSIONS } from "../../config/permissions";
 import * as controller from "./settings.controller.js";
 
 /**

@@ -1,3 +1,3 @@
-export { staffRoutes } from "./staff.routes.js";
+export { staffRoutes } from "./staff.routes";
 export * from "./staff.schema.js";
 export * from "./staff.service.js";

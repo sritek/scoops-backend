@@ -1,1 +1,1 @@
-export { subjectsRoutes } from "./subjects.routes.js";
+export { subjectsRoutes } from "./subjects.routes";

@@ -9,7 +9,7 @@ import { fastifyLoggerOptions, createModuleLogger } from "./config/logger.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
 import { requireRole } from "./middleware/rbac.middleware.js";
 import { loggingContextPlugin } from "./middleware/logging.middleware.js";
-import { ROLES } from "./config/permissions.js";
+import { ROLES } from "./config/permissions";
 import { env } from "./config/env.js";
 import { testDbConnection } from "./config/database.js";
 
@@ -29,14 +29,28 @@ import { periodTemplatesRoutes } from "./modules/period-templates/index.js";
 import { notificationsRoutes } from "./modules/notifications/index.js";
 import { jobsRoutes } from "./modules/jobs/index.js";
 import { staffRoutes } from "./modules/staff/index.js";
-import { parentAuthRoutes } from "./modules/auth/parent-auth.routes.js";
-import { webhookRoutes } from "./modules/notifications/webhook.routes.js";
-import { paymentLinkRoutes, publicPaymentRoutes, razorpayWebhookRoutes } from "./modules/payments/index.js";
+import { parentAuthRoutes } from "./modules/auth/parent-auth.routes";
+import { webhookRoutes } from "./modules/notifications/webhook.routes";
+import {
+  paymentLinkRoutes,
+  publicPaymentRoutes,
+  razorpayWebhookRoutes,
+} from "./modules/payments/index.js";
 import { reportsRoutes } from "./modules/reports/index.js";
 import { examsRoutes } from "./modules/exams/index.js";
 import { messagingRoutes } from "./modules/messaging/index.js";
 import { complaintsRoutes } from "./modules/complaints/index.js";
 import { analyticsRoutes } from "./modules/analytics/index.js";
+import { scholarshipsRoutes } from "./modules/scholarships/index.js";
+import {
+  installmentsRoutes,
+  feeInstallmentsRoutes,
+} from "./modules/installments/index.js";
+import { healthRoutes } from "./modules/health/index.js";
+import { parentRoutes } from "./modules/parents/index.js";
+import { leaveRoutes } from "./modules/leave/index.js";
+import { calendarRoutes } from "./modules/calendar/index.js";
+import { homeworkRoutes } from "./modules/homework/index.js";
 import { schedulerPlugin } from "./scheduler/index.js";
 
 const log = createModuleLogger("app");
@@ -49,6 +63,7 @@ const PUBLIC_ROUTES = [
   "/health",
   "/api/v1/auth/login", // Login endpoint
   "/api/v1/auth/parent", // Parent OTP auth (public)
+  "/api/v1/parent", // Parent portal (uses x-parent-token auth)
   "/api/v1/webhooks", // Webhook endpoints (public)
   "/api/v1/pay", // Public payment pages
   "/docs", // Swagger UI (has own auth hook in production)
@@ -95,7 +110,12 @@ export async function buildApp() {
     origin: env.CORS_ORIGIN === "*" ? true : env.CORS_ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Branch-ID"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Branch-ID",
+      "x-parent-token",
+    ],
     exposedHeaders: ["X-Total-Count"],
   });
   log.info("CORS registered");
@@ -196,6 +216,9 @@ export async function buildApp() {
   await app.register(studentsRoutes, { prefix: "/api/v1/students" });
   log.debug("Route registered: /api/v1/students");
 
+  await app.register(healthRoutes, { prefix: "/api/v1/students" });
+  log.debug("Route registered: /api/v1/students/:id/health");
+
   await app.register(batchesRoutes, { prefix: "/api/v1/batches" });
   log.debug("Route registered: /api/v1/batches");
 
@@ -223,7 +246,9 @@ export async function buildApp() {
   await app.register(subjectsRoutes, { prefix: "/api/v1/subjects" });
   log.debug("Route registered: /api/v1/subjects");
 
-  await app.register(periodTemplatesRoutes, { prefix: "/api/v1/period-templates" });
+  await app.register(periodTemplatesRoutes, {
+    prefix: "/api/v1/period-templates",
+  });
   log.debug("Route registered: /api/v1/period-templates");
 
   await app.register(notificationsRoutes, { prefix: "/api/v1/notifications" });
@@ -250,8 +275,28 @@ export async function buildApp() {
   await app.register(complaintsRoutes, { prefix: "/api/v1/complaints" });
   log.debug("Route registered: /api/v1/complaints");
 
+  await app.register(leaveRoutes, { prefix: "/api/v1/leave-applications" });
+  log.debug("Route registered: /api/v1/leave-applications");
+
+  await app.register(calendarRoutes, { prefix: "/api/v1/calendar" });
+  log.debug("Route registered: /api/v1/calendar");
+
+  await app.register(homeworkRoutes, { prefix: "/api/v1/homework" });
+  log.debug("Route registered: /api/v1/homework");
+
   await app.register(analyticsRoutes, { prefix: "/api/v1/analytics" });
   log.debug("Route registered: /api/v1/analytics");
+
+  await app.register(scholarshipsRoutes, { prefix: "/api/v1/scholarships" });
+  log.debug("Route registered: /api/v1/scholarships");
+
+  await app.register(installmentsRoutes, { prefix: "/api/v1/emi-templates" });
+  log.debug("Route registered: /api/v1/emi-templates");
+
+  await app.register(feeInstallmentsRoutes, {
+    prefix: "/api/v1/fees/installments",
+  });
+  log.debug("Route registered: /api/v1/fees/installments");
 
   // Public payment pages (no auth required)
   await app.register(publicPaymentRoutes, { prefix: "/api/v1/pay" });
@@ -260,6 +305,10 @@ export async function buildApp() {
   // Parent auth routes (public - OTP based login)
   await app.register(parentAuthRoutes, { prefix: "/api/v1/auth/parent" });
   log.debug("Route registered: /api/v1/auth/parent (public)");
+
+  // Parent portal routes (uses x-parent-token auth)
+  await app.register(parentRoutes, { prefix: "/api/v1/parent" });
+  log.debug("Route registered: /api/v1/parent (parent auth)");
 
   // Webhook routes (public - for external service callbacks)
   await app.register(webhookRoutes, { prefix: "/api/v1/webhooks" });

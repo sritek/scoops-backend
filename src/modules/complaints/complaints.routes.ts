@@ -5,7 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import { branchContextMiddleware } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
-import { PERMISSIONS } from "../../config/permissions.js";
+import { PERMISSIONS } from "../../config/permissions";
 import * as controller from "./complaints.controller.js";
 
 export async function complaintsRoutes(app: FastifyInstance) {

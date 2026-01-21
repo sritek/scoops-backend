@@ -2,5 +2,5 @@
  * Analytics Module
  */
 
-export { analyticsRoutes } from "./analytics.routes.js";
+export { analyticsRoutes } from "./analytics.routes";
 export * as analyticsService from "./analytics.service.js";

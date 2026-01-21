@@ -1,1 +1,1 @@
-export { studentsRoutes } from "./students.routes.js";
+export { studentsRoutes } from "./students.routes";

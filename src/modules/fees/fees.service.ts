@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import type { Role } from "../../types/auth.js";
-import { ROLES } from "../../config/permissions.js";
+import { ROLES } from "../../config/permissions";
 import { NotFoundError, BadRequestError } from "../../utils/error-handler.js";
 import {
   type PaginationParams,

@@ -1,1 +1,1 @@
-export { branchRoutes } from "./branch.routes.js";
+export { branchRoutes } from "./branch.routes";

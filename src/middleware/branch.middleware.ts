@@ -95,6 +95,24 @@ export async function branchContextMiddleware(
 }
 
 /**
+ * Set scope middleware.
+ * Sets request.scope from userContext for use in controllers.
+ * Must run AFTER auth middleware.
+ */
+export async function setScopeMiddleware(
+  request: ProtectedRequest,
+  reply: FastifyReply
+): Promise<void> {
+  if (!request.userContext) {
+    throw new UnauthorizedError("User context not found - auth middleware must run first");
+  }
+  request.scope = {
+    orgId: request.userContext.orgId,
+    branchId: request.userContext.branchId,
+  };
+}
+
+/**
  * Get tenant scope for database queries.
  * Use this in all service/repository calls to ensure data isolation.
  *

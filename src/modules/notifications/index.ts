@@ -15,6 +15,6 @@ export {
   normalizePhone,
 } from "./whatsapp.provider.js";
 
-export { notificationsRoutes } from "./notifications.routes.js";
-export { webhookRoutes } from "./webhook.routes.js";
+export { notificationsRoutes } from "./notifications.routes";
+export { webhookRoutes } from "./webhook.routes";
 export { handleWebhook } from "./gupshup.webhook.js";

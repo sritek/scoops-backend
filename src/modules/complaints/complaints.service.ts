@@ -354,3 +354,208 @@ function formatComplaint(complaint: any) {
     updatedAt: complaint.updatedAt,
   };
 }
+
+// ============================================================================
+// Parent-specific complaint functions
+// ============================================================================
+
+/**
+ * Create complaint as parent input
+ */
+export interface CreateParentComplaintInput {
+  subject: string;
+  description: string;
+  category: string;
+  studentId: string;
+}
+
+/**
+ * Create a complaint as parent
+ */
+export async function createParentComplaint(
+  input: CreateParentComplaintInput,
+  parentId: string,
+  parentContext: { orgId: string; branchId: string }
+) {
+  // Verify parent is linked to this student
+  const link = await prisma.studentParent.findUnique({
+    where: {
+      studentId_parentId: { studentId: input.studentId, parentId },
+    },
+  });
+
+  if (!link) {
+    throw new BadRequestError("You can only submit complaints for your own children");
+  }
+
+  const ticketNumber = await generateTicketNumber(parentContext.orgId);
+
+  const complaint = await prisma.complaint.create({
+    data: {
+      orgId: parentContext.orgId,
+      branchId: parentContext.branchId,
+      ticketNumber,
+      subject: input.subject,
+      description: input.description,
+      category: input.category,
+      priority: "medium",
+      studentId: input.studentId,
+      submittedByParentId: parentId,
+    },
+    include: {
+      student: { select: { firstName: true, lastName: true } },
+      submittedByParent: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  return formatComplaint(complaint);
+}
+
+/**
+ * Get complaints for a parent
+ */
+export async function getParentComplaints(
+  parentId: string,
+  pagination: PaginationParams,
+  filters?: { status?: ComplaintStatus }
+) {
+  const where: any = {
+    submittedByParentId: parentId,
+  };
+
+  if (filters?.status) {
+    where.status = filters.status;
+  }
+
+  const [complaints, total] = await Promise.all([
+    prisma.complaint.findMany({
+      where,
+      include: {
+        student: { select: { firstName: true, lastName: true } },
+        submittedByParent: { select: { firstName: true, lastName: true } },
+        assignedTo: { select: { firstName: true, lastName: true } },
+        _count: { select: { comments: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: calculateSkip(pagination),
+      take: pagination.limit,
+    }),
+    prisma.complaint.count({ where }),
+  ]);
+
+  return createPaginatedResponse(
+    complaints.map(formatComplaint),
+    total,
+    pagination
+  );
+}
+
+/**
+ * Get complaint by ID for parent
+ */
+export async function getParentComplaintById(id: string, parentId: string) {
+  const complaint = await prisma.complaint.findFirst({
+    where: {
+      id,
+      submittedByParentId: parentId,
+    },
+    include: {
+      student: { select: { firstName: true, lastName: true } },
+      submittedByParent: { select: { firstName: true, lastName: true } },
+      assignedTo: { select: { firstName: true, lastName: true } },
+      comments: {
+        where: {
+          isInternal: false, // Parents should not see internal comments
+        },
+        include: {
+          authorUser: { select: { firstName: true, lastName: true } },
+          authorParent: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!complaint) {
+    throw new NotFoundError("Complaint");
+  }
+
+  return {
+    ...formatComplaint(complaint),
+    comments: complaint.comments.map((c) => ({
+      id: c.id,
+      content: c.content,
+      createdAt: c.createdAt,
+      authorName: c.authorUser
+        ? `${c.authorUser.firstName} ${c.authorUser.lastName}`
+        : c.authorParent
+        ? `${c.authorParent.firstName} ${c.authorParent.lastName}`
+        : "Unknown",
+      authorType: c.authorUserId ? "staff" : "parent",
+      isOwnComment: c.authorParentId === parentId,
+    })),
+  };
+}
+
+/**
+ * Add comment as parent
+ */
+export async function addParentComment(
+  complaintId: string,
+  content: string,
+  parentId: string
+) {
+  // Verify parent owns this complaint
+  const complaint = await prisma.complaint.findFirst({
+    where: {
+      id: complaintId,
+      submittedByParentId: parentId,
+    },
+  });
+
+  if (!complaint) {
+    throw new NotFoundError("Complaint");
+  }
+
+  if (complaint.status === "resolved" || complaint.status === "closed") {
+    throw new BadRequestError("Cannot add comments to resolved or closed complaints");
+  }
+
+  const comment = await prisma.complaintComment.create({
+    data: {
+      complaintId,
+      content,
+      isInternal: false,
+      authorParentId: parentId,
+    },
+    include: {
+      authorParent: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  return {
+    id: comment.id,
+    content: comment.content,
+    createdAt: comment.createdAt,
+    authorName: comment.authorParent
+      ? `${comment.authorParent.firstName} ${comment.authorParent.lastName}`
+      : "Unknown",
+    authorType: "parent",
+    isOwnComment: true,
+  };
+}
+
+/**
+ * Get available categories for complaints
+ */
+export function getComplaintCategories() {
+  return [
+    { id: "academic", name: "Academic" },
+    { id: "discipline", name: "Discipline" },
+    { id: "infrastructure", name: "Infrastructure" },
+    { id: "transport", name: "Transport" },
+    { id: "fees", name: "Fees & Payments" },
+    { id: "staff", name: "Staff Related" },
+    { id: "other", name: "Other" },
+  ];
+}

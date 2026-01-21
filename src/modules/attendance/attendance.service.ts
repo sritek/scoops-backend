@@ -2,10 +2,11 @@ import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import { BadRequestError } from "../../utils/error-handler.js";
 import { emitEvent, emitEvents, EVENT_TYPES } from "../events/index.js";
-import { ROLES } from "../../config/permissions.js";
+import { ROLES } from "../../config/permissions";
 import type { MarkAttendanceInput } from "./attendance.schema.js";
 import { createPaginatedResponse, calculateSkip, type PaginationParams } from "../../utils/pagination.js";
 import type { Prisma } from "@prisma/client";
+import { getStudentsOnLeave } from "../leave/leave.service.js";
 
 /**
  * Helper to format full name
@@ -120,6 +121,9 @@ export async function getAttendance(
 ) {
   const attendanceDate = new Date(date);
 
+  // Get students on approved leave for this date
+  const studentsOnLeave = await getStudentsOnLeave(scope, batchId, date);
+
   // Get the session with records
   const session = await prisma.attendanceSession.findFirst({
     where: {
@@ -170,11 +174,16 @@ export async function getAttendance(
       session: null,
       date,
       batchId,
-      records: students.map((s) => ({
-        studentId: s.id,
-        studentName: formatFullName(s.firstName, s.lastName),
-        status: null,
-      })),
+      records: students.map((s) => {
+        const leaveInfo = studentsOnLeave.get(s.id);
+        return {
+          studentId: s.id,
+          studentName: formatFullName(s.firstName, s.lastName),
+          status: null,
+          onLeave: !!leaveInfo,
+          leaveInfo: leaveInfo ?? null,
+        };
+      }),
     };
   }
 
@@ -191,12 +200,17 @@ export async function getAttendance(
     },
     date,
     batchId,
-    records: session.records.map((r) => ({
-      studentId: r.student.id,
-      studentName: formatFullName(r.student.firstName, r.student.lastName),
-      status: r.status,
-      markedAt: r.markedAt,
-    })),
+    records: session.records.map((r) => {
+      const leaveInfo = studentsOnLeave.get(r.student.id);
+      return {
+        studentId: r.student.id,
+        studentName: formatFullName(r.student.firstName, r.student.lastName),
+        status: r.status,
+        markedAt: r.markedAt,
+        onLeave: !!leaveInfo,
+        leaveInfo: leaveInfo ?? null,
+      };
+    }),
   };
 }
 

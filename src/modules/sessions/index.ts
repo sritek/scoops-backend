@@ -1,1 +1,1 @@
-export { sessionsRoutes } from "./sessions.routes.js";
+export { sessionsRoutes } from "./sessions.routes";

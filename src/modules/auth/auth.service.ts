@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { prisma } from "../../config/database.js";
 import { env } from "../../config/env.js";
-import { getPermissionsForRole } from "../../config/permissions.js";
+import { getPermissionsForRole } from "../../config/permissions";
 import type { Role } from "../../types/auth.js";
 import { createModuleLogger } from "../../config/logger.js";
 

@@ -95,6 +95,31 @@ enum LeaveType {
   unpaid
 }
 
+// Student Leave Enums (Phase 4)
+enum StudentLeaveStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum StudentLeaveType {
+  sick
+  family
+  vacation
+  medical
+  other
+}
+
+// Academic Calendar Enums (Phase 3)
+enum AcademicEventType {
+  holiday
+  exam
+  ptm
+  event
+  deadline
+}
+
 // Phase 2B Enums
 enum PaymentLinkStatus {
   active
@@ -145,6 +170,89 @@ enum ComplaintPriority {
   urgent
 }
 
+// Phase 5: Homework Enums
+enum HomeworkStatus {
+  draft
+  published
+  closed
+}
+
+enum SubmissionStatus {
+  pending
+  submitted
+  late
+  graded
+}
+
+// Phase 3: Fee System Enums
+enum FeeComponentType {
+  tuition
+  admission
+  transport
+  lab
+  library
+  sports
+  exam
+  uniform
+  misc
+}
+
+enum ScholarshipType {
+  percentage       // Percentage off total (e.g., 25% off)
+  fixed_amount     // Fixed amount discount (e.g., ₹5000 off)
+  component_waiver // Waive specific component (e.g., transport)
+}
+
+enum ScholarshipBasis {
+  merit
+  need_based
+  sports
+  sibling
+  staff_ward
+  government
+  custom
+}
+
+enum FeeStructureSource {
+  batch_default // Copied from batch fee structure
+  custom        // Manually set for student
+}
+
+enum InstallmentStatus {
+  upcoming
+  due
+  overdue
+  partial
+  paid
+}
+
+// Phase 3: Health Enums
+enum BloodGroup {
+  A_positive
+  A_negative
+  B_positive
+  B_negative
+  AB_positive
+  AB_negative
+  O_positive
+  O_negative
+  unknown
+}
+
+enum VisionStatus {
+  normal
+  corrected_with_glasses
+  corrected_with_lenses
+  impaired
+}
+
+enum HearingStatus {
+  normal
+  mild_impairment
+  moderate_impairment
+  severe_impairment
+}
+
 //////////////////////////
 // CORE TENANCY
 //////////////////////////
@@ -186,6 +294,13 @@ model Organization {
   jobRuns          JobRun[]
   staffAttendance  StaffAttendance[]
   receipts         Receipt[]
+
+  // Phase 3 Relations
+  feeComponents    FeeComponent[]
+  scholarships     Scholarship[]
+  emiPlanTemplates EMIPlanTemplate[]
+  academicEvents   AcademicEvent[]
+  homework         Homework[]
 }
 
 model Branch {
@@ -207,6 +322,8 @@ model Branch {
   parents      Parent[]
   events       Event[]
   notifications NotificationLog[]
+  academicEvents AcademicEvent[]
+  homework       Homework[]
 }
 
 //////////////////////////
@@ -257,6 +374,18 @@ model User {
   messagesSent               Message[]                  @relation("MessageSentByUser")
   complaintsAssigned         Complaint[]                @relation("ComplaintAssignedTo")
   complaintComments          ComplaintComment[]         @relation("ComplaintCommentByUser")
+
+  // Phase 3 Relations
+  scholarshipsApproved StudentScholarship[] @relation("ScholarshipApprovedBy")
+  installmentPayments  InstallmentPayment[] @relation("InstallmentReceivedBy")
+
+  // Phase 4 Relations
+  leaveApplicationsReviewed LeaveApplication[] @relation("LeaveReviewedBy")
+  academicEventsCreated     AcademicEvent[]    @relation("AcademicEventCreatedBy")
+
+  // Phase 5 Relations
+  homeworkCreated      Homework[]           @relation("HomeworkCreatedBy")
+  submissionsGraded    HomeworkSubmission[] @relation("SubmissionGradedBy")
 }
 
 //////////////////////////
@@ -292,6 +421,22 @@ model Student {
   // Phase 2B Relations
   examScores  ExamScore[]
   complaints  Complaint[]
+
+  // Phase 3 Relations
+  health         StudentHealth?
+  healthCheckups HealthCheckup[]
+  feeStructures  StudentFeeStructure[]
+  scholarships   StudentScholarship[]
+
+  // Phase 4 Relations
+  leaveApplications LeaveApplication[]
+
+  // Phase 5 Relations
+  homeworkSubmissions HomeworkSubmission[]
+
+  // Phase 6: Emergency Contacts
+  // JSON array: [{id, name, relation, phone, isPrimary, notes}]
+  emergencyContacts Json?
 }
 
 model Parent {
@@ -316,6 +461,12 @@ model Parent {
   messagesSent               Message[]                 @relation("MessageSentByParent")
   complaintsSubmitted        Complaint[]               @relation("ComplaintSubmittedByParent")
   complaintComments          ComplaintComment[]        @relation("ComplaintCommentByParent")
+
+  // Phase 3 Relations
+  feeReminders FeeReminder[]
+
+  // Phase 4 Relations
+  leaveApplications LeaveApplication[]
 }
 
 // OTP codes for parent login
@@ -378,6 +529,11 @@ model AcademicSession {
 
   organization Organization @relation(fields: [orgId], references: [id])
   batches      Batch[]
+
+  // Phase 3 Relations
+  batchFeeStructures   BatchFeeStructure[]
+  studentFeeStructures StudentFeeStructure[]
+  studentScholarships  StudentScholarship[]
 }
 
 //////////////////////////
@@ -396,6 +552,7 @@ model Subject {
   organization Organization @relation(fields: [orgId], references: [id])
   periods      Period[]
   exams        Exam[]
+  homework     Homework[]  @relation("HomeworkSubject")
 
   @@unique([orgId, code])
 }
@@ -458,6 +615,13 @@ model Batch {
   // Phase 2B Relations
   exams         Exam[]
   conversations Conversation[]
+
+  // Phase 3 Relations
+  feeStructures  BatchFeeStructure[]
+  academicEvents AcademicEvent[]
+
+  // Phase 5 Relations
+  homework Homework[]
 }
 
 //////////////////////////
@@ -561,6 +725,224 @@ model FeePayment {
 }
 
 //////////////////////////
+// PHASE 3: FEE COMPONENTS & BATCH STRUCTURE
+//////////////////////////
+
+model FeeComponent {
+  id          String           @id @default(uuid())
+  orgId       String
+  name        String           // "Tuition Fee", "Transport Fee"
+  type        FeeComponentType
+  description String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  organization         Organization           @relation(fields: [orgId], references: [id])
+  batchFeeLineItems    BatchFeeLineItem[]
+  studentFeeLineItems  StudentFeeLineItem[]
+  scholarships         Scholarship[]          @relation("ScholarshipComponent")
+
+  @@unique([orgId, type, name])
+}
+
+model BatchFeeStructure {
+  id          String   @id @default(uuid())
+  orgId       String
+  branchId    String
+  batchId     String
+  sessionId   String   // Academic session this applies to
+  name        String   // "2025-26 Fee Structure"
+  totalAmount Int      // Computed sum of line items
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  batch                 Batch                  @relation(fields: [batchId], references: [id])
+  session               AcademicSession        @relation(fields: [sessionId], references: [id])
+  lineItems             BatchFeeLineItem[]
+  studentFeeStructures  StudentFeeStructure[]
+
+  @@unique([batchId, sessionId])
+  @@index([orgId, branchId])
+}
+
+model BatchFeeLineItem {
+  id                  String @id @default(uuid())
+  batchFeeStructureId String
+  feeComponentId      String
+  amount              Int
+
+  batchFeeStructure BatchFeeStructure @relation(fields: [batchFeeStructureId], references: [id], onDelete: Cascade)
+  feeComponent      FeeComponent      @relation(fields: [feeComponentId], references: [id])
+
+  @@unique([batchFeeStructureId, feeComponentId])
+}
+
+//////////////////////////
+// PHASE 3: SCHOLARSHIPS
+//////////////////////////
+
+model Scholarship {
+  id          String          @id @default(uuid())
+  orgId       String
+  name        String          // "Merit Scholarship", "Sibling Discount"
+  type        ScholarshipType
+  basis       ScholarshipBasis
+  value       Int             // Percentage (0-100) or fixed amount
+  componentId String?         // If type = component_waiver, which component to waive
+  maxAmount   Int?            // Cap for percentage-based scholarships
+  description String?
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  organization        Organization          @relation(fields: [orgId], references: [id])
+  feeComponent        FeeComponent?         @relation("ScholarshipComponent", fields: [componentId], references: [id])
+  studentScholarships StudentScholarship[]
+
+  @@unique([orgId, name])
+}
+
+model StudentScholarship {
+  id             String   @id @default(uuid())
+  studentId      String
+  scholarshipId  String
+  sessionId      String   // Academic session this applies to
+  discountAmount Int      // Calculated discount amount
+  approvedById   String   // User who approved
+  approvedAt     DateTime @default(now())
+  remarks        String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  student     Student         @relation(fields: [studentId], references: [id])
+  scholarship Scholarship     @relation(fields: [scholarshipId], references: [id])
+  session     AcademicSession @relation(fields: [sessionId], references: [id])
+  approvedBy  User            @relation("ScholarshipApprovedBy", fields: [approvedById], references: [id])
+
+  @@unique([studentId, scholarshipId, sessionId])
+  @@index([studentId])
+  @@index([sessionId])
+}
+
+//////////////////////////
+// PHASE 3: STUDENT FEE STRUCTURE
+//////////////////////////
+
+model StudentFeeStructure {
+  id                  String             @id @default(uuid())
+  studentId           String
+  sessionId           String
+  source              FeeStructureSource
+  batchFeeStructureId String?            // Reference if copied from batch
+  grossAmount         Int                // Total before scholarships
+  scholarshipAmount   Int                @default(0)
+  netAmount           Int                // Actual payable = gross - scholarship
+  remarks             String?            // Any special notes
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  student           Student              @relation(fields: [studentId], references: [id])
+  session           AcademicSession      @relation(fields: [sessionId], references: [id])
+  batchFeeStructure BatchFeeStructure?   @relation(fields: [batchFeeStructureId], references: [id])
+  lineItems         StudentFeeLineItem[]
+  installments      FeeInstallment[]
+
+  @@unique([studentId, sessionId])
+  @@index([sessionId])
+}
+
+model StudentFeeLineItem {
+  id                    String  @id @default(uuid())
+  studentFeeStructureId String
+  feeComponentId        String
+  originalAmount        Int     // From batch or custom
+  adjustedAmount        Int     // After any component-level adjustments
+  waived                Boolean @default(false)
+  waiverReason          String?
+
+  studentFeeStructure StudentFeeStructure @relation(fields: [studentFeeStructureId], references: [id], onDelete: Cascade)
+  feeComponent        FeeComponent        @relation(fields: [feeComponentId], references: [id])
+
+  @@unique([studentFeeStructureId, feeComponentId])
+}
+
+//////////////////////////
+// PHASE 3: EMI & INSTALLMENTS
+//////////////////////////
+
+model EMIPlanTemplate {
+  id               String   @id @default(uuid())
+  orgId            String
+  name             String   // "Quarterly", "Monthly", "Half-Yearly"
+  installmentCount Int      // 4, 12, 2
+  // JSON array of percentage splits and relative due dates
+  // e.g., [{"percent": 25, "dueDaysFromStart": 0}, {"percent": 25, "dueDaysFromStart": 90}]
+  splitConfig      Json
+  isDefault        Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, name])
+}
+
+model FeeInstallment {
+  id                    String            @id @default(uuid())
+  studentFeeStructureId String
+  installmentNumber     Int               // 1, 2, 3...
+  amount                Int
+  dueDate               DateTime
+  paidAmount            Int               @default(0)
+  status                InstallmentStatus @default(upcoming)
+  reminderSentAt        DateTime?         // Last reminder timestamp
+  reminderCount         Int               @default(0)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  studentFeeStructure StudentFeeStructure  @relation(fields: [studentFeeStructureId], references: [id], onDelete: Cascade)
+  payments            InstallmentPayment[]
+  reminders           FeeReminder[]
+  paymentLinks        PaymentLink[]
+
+  @@unique([studentFeeStructureId, installmentNumber])
+  @@index([dueDate, status])
+}
+
+model InstallmentPayment {
+  id             String      @id @default(uuid())
+  installmentId  String
+  amount         Int
+  paymentMode    PaymentMode
+  transactionRef String?     // UPI/Bank reference
+  receivedById   String
+  receivedAt     DateTime    @default(now())
+  remarks        String?
+
+  installment FeeInstallment @relation(fields: [installmentId], references: [id])
+  receivedBy  User           @relation("InstallmentReceivedBy", fields: [receivedById], references: [id])
+
+  @@index([installmentId])
+}
+
+model FeeReminder {
+  id             String             @id @default(uuid())
+  installmentId  String
+  parentId       String
+  sentAt         DateTime           @default(now())
+  channel        String             // "whatsapp" | "sms"
+  status         NotificationStatus
+  providerMsgId  String?
+
+  installment FeeInstallment @relation(fields: [installmentId], references: [id])
+  parent      Parent         @relation(fields: [parentId], references: [id])
+
+  @@index([installmentId, sentAt])
+}
+
+//////////////////////////
 // EVENTS & NOTIFICATIONS
 //////////////////////////
 
@@ -661,6 +1043,117 @@ model StaffAttendance {
 }
 
 //////////////////////////
+// STUDENT LEAVE (Phase 4)
+//////////////////////////
+
+model LeaveApplication {
+  id           String             @id @default(uuid())
+  orgId        String
+  branchId     String
+  studentId    String
+  parentId     String
+  type         StudentLeaveType
+  reason       String
+  startDate    DateTime           @db.Date
+  endDate      DateTime           @db.Date
+  totalDays    Int
+  status       StudentLeaveStatus @default(pending)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  student    Student @relation(fields: [studentId], references: [id])
+  parent     Parent  @relation(fields: [parentId], references: [id])
+  reviewedBy User?   @relation("LeaveReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([studentId, startDate])
+  @@index([orgId, branchId, status])
+}
+
+//////////////////////////
+// ACADEMIC CALENDAR
+//////////////////////////
+
+model AcademicEvent {
+  id          String            @id @default(uuid())
+  orgId       String
+  branchId    String
+  batchId     String?           // null = applies to all batches (school-wide)
+  type        AcademicEventType
+  title       String
+  description String?
+  startDate   DateTime          @db.Date
+  endDate     DateTime?         @db.Date
+  isAllDay    Boolean           @default(true)
+  createdById String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  batch        Batch?       @relation(fields: [batchId], references: [id])
+  createdBy    User         @relation("AcademicEventCreatedBy", fields: [createdById], references: [id])
+
+  @@index([orgId, branchId, startDate])
+  @@index([batchId])
+}
+
+//////////////////////////
+// HOMEWORK & ASSIGNMENTS
+//////////////////////////
+
+model Homework {
+  id          String         @id @default(uuid())
+  orgId       String
+  branchId    String
+  batchId     String
+  subjectId   String?
+  title       String
+  description String         @db.Text
+  attachments Json?          // Array of {name, url}
+  dueDate     DateTime
+  totalMarks  Int?           // null if not graded
+  status      HomeworkStatus @default(draft)
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  organization Organization         @relation(fields: [orgId], references: [id])
+  branch       Branch               @relation(fields: [branchId], references: [id])
+  batch        Batch                @relation(fields: [batchId], references: [id])
+  subject      Subject?             @relation("HomeworkSubject", fields: [subjectId], references: [id])
+  createdBy    User                 @relation("HomeworkCreatedBy", fields: [createdById], references: [id])
+  submissions  HomeworkSubmission[]
+
+  @@index([batchId, dueDate])
+  @@index([orgId, branchId, status])
+}
+
+model HomeworkSubmission {
+  id           String           @id @default(uuid())
+  homeworkId   String
+  studentId    String
+  status       SubmissionStatus @default(pending)
+  submittedAt  DateTime?
+  attachments  Json?            // Array of {name, url}
+  marks        Int?
+  feedback     String?
+  gradedById   String?
+  gradedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  homework Homework @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id])
+  gradedBy User?    @relation("SubmissionGradedBy", fields: [gradedById], references: [id])
+
+  @@unique([homeworkId, studentId])
+  @@index([studentId])
+}
+
+//////////////////////////
 // RECEIPTS
 //////////////////////////
 
@@ -705,7 +1198,8 @@ model PaymentLink {
   id              String            @id @default(uuid())
   orgId           String
   branchId        String
-  studentFeeId    String
+  studentFeeId    String?           // Legacy: old fee system
+  installmentId   String?           // New: Phase 3 installment system
   shortCode       String            @unique // "abc123" for short URLs
   amount          Int
   description     String?
@@ -717,11 +1211,13 @@ model PaymentLink {
   createdById     String
   createdAt       DateTime          @default(now())
 
-  studentFee StudentFee @relation(fields: [studentFeeId], references: [id])
-  createdBy  User       @relation("PaymentLinkCreatedBy", fields: [createdById], references: [id])
+  studentFee  StudentFee?     @relation(fields: [studentFeeId], references: [id])
+  installment FeeInstallment? @relation(fields: [installmentId], references: [id])
+  createdBy   User            @relation("PaymentLinkCreatedBy", fields: [createdById], references: [id])
 
   @@index([shortCode])
   @@index([studentFeeId])
+  @@index([installmentId])
   @@index([orgId, status])
 }
 
@@ -911,4 +1407,91 @@ model ComplaintSequence {
   id         String @id @default(uuid())
   orgId      String @unique
   lastNumber Int    @default(0)
+}
+
+//////////////////////////
+// PHASE 3: STUDENT HEALTH
+//////////////////////////
+
+model StudentHealth {
+  id        String @id @default(uuid())
+  studentId String @unique
+
+  // Basic Vitals
+  bloodGroup BloodGroup?
+  heightCm   Float?      // in centimeters
+  weightKg   Float?      // in kilograms
+
+  // Medical History
+  allergies          String? // Comma-separated: "Peanuts, Dust, Penicillin"
+  chronicConditions  String? // "Asthma, Diabetes Type 1, Epilepsy"
+  currentMedications String? // "Inhaler, Insulin"
+  pastSurgeries      String? // "Appendectomy (2023)"
+
+  // Sensory
+  visionLeft     VisionStatus?
+  visionRight    VisionStatus?
+  usesGlasses    Boolean       @default(false)
+  hearingStatus  HearingStatus?
+  usesHearingAid Boolean       @default(false)
+
+  // Physical
+  physicalDisability String? // Description if any
+  mobilityAid        String? // "Wheelchair", "Crutches"
+
+  // Vaccinations (JSON object for flexibility)
+  // {"BCG": "2015-01-10", "Polio": "2015-03-15", "MMR": "2016-01-20"}
+  vaccinationRecords Json?
+
+  // Insurance
+  hasInsurance      Boolean   @default(false)
+  insuranceProvider String?
+  insurancePolicyNo String?
+  insuranceExpiry   DateTime?
+
+  // Emergency
+  emergencyMedicalNotes String? // Special instructions for emergencies
+  familyDoctorName      String?
+  familyDoctorPhone     String?
+  preferredHospital     String?
+
+  // Checkup Tracking
+  lastCheckupDate DateTime?
+  nextCheckupDue  DateTime?
+
+  // Dietary
+  dietaryRestrictions String? // "Vegetarian", "No pork", "Lactose intolerant"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+}
+
+model HealthCheckup {
+  id          String   @id @default(uuid())
+  studentId   String
+  checkupDate DateTime
+
+  heightCm Float?
+  weightKg Float?
+  bmi      Float? // Calculated
+
+  visionLeft  String? // "6/6", "6/12"
+  visionRight String?
+
+  bloodPressure String? // "120/80"
+  pulse         Int?    // BPM
+
+  dentalStatus String? // "Good", "Cavities", "Braces"
+
+  findings        String? @db.Text
+  recommendations String? @db.Text
+  conductedBy     String? // Doctor/Nurse name
+
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@index([studentId, checkupDate])
 }

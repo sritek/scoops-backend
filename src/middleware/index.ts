@@ -17,6 +17,11 @@ import {
   logWarning,
   logError,
 } from "./logging.middleware.js";
+import {
+  parentAuthMiddleware,
+  getParentContext,
+  type ParentContext,
+} from "./parent-auth.middleware.js";
 
 /**
  * Apply authentication middleware to a route or plugin.
@@ -120,3 +125,14 @@ export const protectedRouteOptions = {
  *   logError(request, error, { operation: 'createStudent' });
  */
 export { loggingContextPlugin, logAction, logWarning, logError };
+
+/**
+ * Parent authentication middleware.
+ *
+ * Usage:
+ *   app.get('/parent/profile', { preHandler: [parentAuthMiddleware] }, handler);
+ *
+ *   // Get parent context in handler
+ *   const parent = getParentContext(request);
+ */
+export { parentAuthMiddleware, getParentContext, type ParentContext };

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import type { FastifyInstance } from "fastify";
-import { buildTestApp, getAuthHeaders } from "../helpers.js";
-import { USERS, ORG1_BRANCH2_USERS, ORG2_USERS } from "../fixtures.js";
+import { buildTestApp, getAuthHeaders } from "../helpers";
+import { USERS, ORG1_BRANCH2_USERS, ORG2_USERS } from "../fixtures";
 import { prisma } from "../setup.js";
-import type { StudentResponse, BatchResponse, AttendanceResponse } from "../types.js";
+import type { StudentResponse, BatchResponse, AttendanceResponse } from "../types";
 
 describe("Data Isolation", () => {
   let app: FastifyInstance;

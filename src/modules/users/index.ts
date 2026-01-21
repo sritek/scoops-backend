@@ -1,1 +1,1 @@
-export { usersRoutes } from "./users.routes.js";
+export { usersRoutes } from "./users.routes";

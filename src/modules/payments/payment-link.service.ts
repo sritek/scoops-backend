@@ -13,7 +13,10 @@ import {
   createPaginatedResponse,
   calculateSkip,
 } from "../../utils/pagination.js";
-import { createRazorpayPaymentLink, isRazorpayConfigured } from "./razorpay.provider.js";
+import {
+  createRazorpayPaymentLink,
+  isRazorpayConfigured,
+} from "./razorpay.provider.js";
 import { randomBytes } from "crypto";
 
 /**
@@ -265,14 +268,16 @@ export async function getPaymentLinkByShortCode(shortCode: string) {
     status: paymentLink.status,
     expiresAt: paymentLink.expiresAt,
     razorpayUrl: paymentLink.razorpayUrl,
-    student: {
-      name: formatFullName(
-        paymentLink.studentFee.student.firstName,
-        paymentLink.studentFee.student.lastName
-      ),
-      batchName: paymentLink.studentFee.student.batch?.name,
-    },
-    feePlan: paymentLink.studentFee.feePlan.name,
+    student: paymentLink.studentFee
+      ? {
+          name: formatFullName(
+            paymentLink.studentFee.student.firstName,
+            paymentLink.studentFee.student.lastName
+          ),
+          batchName: paymentLink.studentFee.student.batch?.name,
+        }
+      : null,
+    feePlan: paymentLink.studentFee?.feePlan?.name ?? null,
     organization: org,
   };
 }
@@ -360,13 +365,19 @@ export async function getPaymentLinks(
       expiresAt: link.expiresAt,
       paidAt: link.paidAt,
       createdAt: link.createdAt,
-      paymentUrl: link.razorpayUrl || `${env.APP_BASE_URL}/pay/${link.shortCode}`,
-      studentName: formatFullName(
-        link.studentFee.student.firstName,
-        link.studentFee.student.lastName
+      paymentUrl:
+        link.razorpayUrl || `${env.APP_BASE_URL}/pay/${link.shortCode}`,
+      studentName: link.studentFee
+        ? formatFullName(
+            link.studentFee.student.firstName,
+            link.studentFee.student.lastName
+          )
+        : "N/A",
+      feePlanName: link.studentFee?.feePlan?.name ?? "N/A",
+      createdBy: formatFullName(
+        link.createdBy.firstName,
+        link.createdBy.lastName
       ),
-      feePlanName: link.studentFee.feePlan.name,
-      createdBy: formatFullName(link.createdBy.firstName, link.createdBy.lastName),
     })),
     total,
     pagination
@@ -409,12 +420,16 @@ export async function getPaymentLinkById(id: string, scope: TenantScope) {
 
   return {
     ...paymentLink,
-    paymentUrl: paymentLink.razorpayUrl || `${env.APP_BASE_URL}/pay/${paymentLink.shortCode}`,
-    studentName: formatFullName(
-      paymentLink.studentFee.student.firstName,
-      paymentLink.studentFee.student.lastName
-    ),
-    feePlanName: paymentLink.studentFee.feePlan.name,
+    paymentUrl:
+      paymentLink.razorpayUrl ||
+      `${env.APP_BASE_URL}/pay/${paymentLink.shortCode}`,
+    studentName: paymentLink.studentFee
+      ? formatFullName(
+          paymentLink.studentFee.student.firstName,
+          paymentLink.studentFee.student.lastName
+        )
+      : "N/A",
+    feePlanName: paymentLink.studentFee?.feePlan?.name ?? "N/A",
   };
 }
 
@@ -460,7 +475,9 @@ export async function markPaymentLinkPaid(
   }
 
   if (paymentLink.status !== "active") {
-    console.warn(`Payment link ${shortCode} is not active (status: ${paymentLink.status})`);
+    console.warn(
+      `Payment link ${shortCode} is not active (status: ${paymentLink.status})`
+    );
     return paymentLink;
   }
 
@@ -473,30 +490,33 @@ export async function markPaymentLinkPaid(
     },
   });
 
-  // Create fee payment record
+  // Create fee payment record only if studentFee exists
   // Note: We need a system user ID for online payments - for now, use createdById
-  await prisma.feePayment.create({
-    data: {
-      studentFeeId: paymentLink.studentFeeId,
-      amount: paymentLink.amount,
-      paymentMode: "upi", // Online payments are typically UPI
-      receivedById: paymentLink.createdById,
-      receivedAt: new Date(),
-    },
-  });
+  if (paymentLink.studentFeeId && paymentLink.studentFee) {
+    await prisma.feePayment.create({
+      data: {
+        studentFeeId: paymentLink.studentFeeId,
+        amount: paymentLink.amount,
+        paymentMode: "upi", // Online payments are typically UPI
+        receivedById: paymentLink.createdById,
+        receivedAt: new Date(),
+      },
+    });
 
-  // Update student fee
-  const newPaidAmount = paymentLink.studentFee.paidAmount + paymentLink.amount;
-  const newStatus =
-    newPaidAmount >= paymentLink.studentFee.totalAmount ? "paid" : "partial";
+    // Update student fee
+    const newPaidAmount =
+      paymentLink.studentFee.paidAmount + paymentLink.amount;
+    const newStatus =
+      newPaidAmount >= paymentLink.studentFee.totalAmount ? "paid" : "partial";
 
-  await prisma.studentFee.update({
-    where: { id: paymentLink.studentFeeId },
-    data: {
-      paidAmount: newPaidAmount,
-      status: newStatus,
-    },
-  });
+    await prisma.studentFee.update({
+      where: { id: paymentLink.studentFeeId },
+      data: {
+        paidAmount: newPaidAmount,
+        status: newStatus,
+      },
+    });
+  }
 
   return updatedLink;
 }

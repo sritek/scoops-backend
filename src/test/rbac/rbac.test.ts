@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import type { FastifyInstance } from "fastify";
-import { buildTestApp, getAuthHeaders } from "../helpers.js";
-import { USERS } from "../fixtures.js";
+import { buildTestApp, getAuthHeaders } from "../helpers";
+import { USERS } from "../fixtures";
 import { prisma } from "../setup.js";
-import type { ApiErrorResponse } from "../types.js";
+import type { ApiErrorResponse } from "../types";
 
 describe("RBAC Enforcement", () => {
   let app: FastifyInstance;

@@ -2,5 +2,5 @@
  * Exams Module
  */
 
-export { examsRoutes } from "./exams.routes.js";
+export { examsRoutes } from "./exams.routes";
 export * as examsService from "./exams.service.js";

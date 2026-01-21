@@ -2,5 +2,5 @@
  * Messaging Module
  */
 
-export { messagingRoutes } from "./messaging.routes.js";
+export { messagingRoutes } from "./messaging.routes";
 export * as messagingService from "./messaging.service.js";

@@ -1,4 +1,4 @@
-export { authRoutes } from "./auth.routes.js";
+export { authRoutes } from "./auth.routes";
 export {
   login,
   changePassword,

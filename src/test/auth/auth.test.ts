@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import type { FastifyInstance } from "fastify";
-import { buildTestApp, createTestToken, createTokenPayload } from "../helpers.js";
+import { buildTestApp, createTestToken, createTokenPayload } from "../helpers";
 import { prisma } from "../setup.js";
-import type { ApiErrorResponse, MeResponse, HealthResponse } from "../types.js";
+import type { ApiErrorResponse, MeResponse, HealthResponse } from "../types";
 import { hashPassword } from "../../modules/auth/auth.service.js";
 
 // Known test data - will be populated from seed

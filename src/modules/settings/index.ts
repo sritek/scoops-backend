@@ -1,2 +1,2 @@
-export { settingsRoutes } from "./settings.routes.js";
+export { settingsRoutes } from "./settings.routes";
 export * as settingsService from "./settings.service.js";

@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ProtectedRequest } from "../../types/request.js";
 import { branchContextMiddleware, getTenantScopeFromRequest } from "../../middleware/branch.middleware.js";
 import { requirePermission } from "../../middleware/rbac.middleware.js";
-import { PERMISSIONS } from "../../config/permissions.js";
+import { PERMISSIONS } from "../../config/permissions";
 import * as analyticsService from "./analytics.service.js";
 
 export async function analyticsRoutes(app: FastifyInstance) {

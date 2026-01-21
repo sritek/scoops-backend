@@ -1,1 +1,1 @@
-export { batchesRoutes } from "./batches.routes.js";
+export { batchesRoutes } from "./batches.routes";

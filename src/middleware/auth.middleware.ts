@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import type { UserContext, Role } from "../types/auth.js";
 import { verifyToken, type JwtPayload } from "../modules/auth/auth.service.js";
 import { prisma } from "../config/database.js";
-import { getPermissionsForRole } from "../config/permissions.js";
+import { getPermissionsForRole } from "../config/permissions";
 import { createModuleLogger } from "../config/logger.js";
 
 // Fallback logger for when request.log is not available

@@ -1,1 +1,1 @@
-export { attendanceRoutes } from "./attendance.routes.js";
+export { attendanceRoutes } from "./attendance.routes";
