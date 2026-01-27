@@ -13,15 +13,22 @@ import { createModuleLogger } from "../../config/logger.js";
 
 const log = createModuleLogger("auth-controller");
 
+function sanitizeBody(body: Record<string, any>) {
+  return {
+    ...body,
+    password: "********",
+  };
+}
+
 /**
  * Handle login request
  * POST /auth/login
  */
 export async function login(
   request: FastifyRequest<{ Body: LoginInput }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
-  log.info({ body: request.body }, "Login request");
+  log.info({ body: sanitizeBody(request.body) }, "Login request");
   // Validate input
   const parseResult = loginSchema.safeParse(request.body);
   if (!parseResult.success) {
@@ -55,7 +62,7 @@ export async function login(
  */
 export async function changePassword(
   request: FastifyRequest<{ Body: ChangePasswordInput }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   log.info({ body: request.body }, "Change password request");
   // Validate input
@@ -82,7 +89,7 @@ export async function changePassword(
   const success = await authService.changePassword(
     userId,
     currentPassword,
-    newPassword
+    newPassword,
   );
 
   if (!success) {
@@ -106,7 +113,7 @@ export async function changePassword(
  */
 export async function resetPassword(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   log.info({ body: request.body }, "Reset password request");
   // Validate input
@@ -135,7 +142,7 @@ export async function resetPassword(
     adminUserId,
     targetUserId,
     newPassword,
-    adminOrgId
+    adminOrgId,
   );
 
   if (!success) {
@@ -192,7 +199,7 @@ export async function getMe(request: FastifyRequest, reply: FastifyReply) {
  */
 export async function updateMe(
   request: FastifyRequest<{ Body: UpdateProfileInput }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   log.info({ body: request.body }, "Update me request");
   const userContext = request.userContext;
@@ -218,7 +225,7 @@ export async function updateMe(
   log.info({ userContext }, "Update me successful");
   const profile = await authService.updateUserProfile(
     userContext.userId,
-    parseResult.data
+    parseResult.data,
   );
 
   log.info({ userContext }, "Update me successful");

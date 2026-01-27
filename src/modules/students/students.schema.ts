@@ -52,7 +52,7 @@ const photoUrlSchema = z
       val.startsWith("data:image/jpeg;base64,") ||
       val.startsWith("data:image/png;base64,") ||
       val.startsWith("data:image/webp;base64,"),
-    { message: "Photo must be a valid Base64 data URL (jpeg, png, or webp)" }
+    { message: "Photo must be a valid Base64 data URL (jpeg, png, or webp)" },
   )
   .refine((val) => val === "" || val.length <= 700000, {
     message: "Photo size must be less than 500KB",
@@ -74,25 +74,140 @@ export const parentInputSchema = z.object({
   isPrimaryContact: z.boolean().optional().default(false),
 });
 
+// Helper to create a nullable enum that also accepts empty string (converts to null)
+const nullableEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.preprocess(
+    (val) => (val === "" || val === null ? null : val),
+    z.enum(values).nullable(),
+  );
+
+const studentHealthInputSchema = z.object({
+  // Basic Vitals
+  bloodGroup: nullableEnum([
+    "A_positive",
+    "A_negative",
+    "B_positive",
+    "B_negative",
+    "AB_positive",
+    "AB_negative",
+    "O_positive",
+    "O_negative",
+    "unknown",
+  ]).optional(),
+  heightCm: z.number().positive().optional().nullable(),
+  weightKg: z.number().positive().optional().nullable(),
+
+  // Medical History
+  allergies: z.string().max(500).optional().nullable(),
+  chronicConditions: z.string().max(500).optional().nullable(),
+  currentMedications: z.string().max(500).optional().nullable(),
+  pastSurgeries: z.string().max(500).optional().nullable(),
+
+  // Sensory
+  visionLeft: nullableEnum([
+    "normal",
+    "corrected_with_glasses",
+    "corrected_with_lenses",
+    "impaired",
+  ]).optional(),
+  visionRight: nullableEnum([
+    "normal",
+    "corrected_with_glasses",
+    "corrected_with_lenses",
+    "impaired",
+  ]).optional(),
+  usesGlasses: z.boolean().optional(),
+  hearingStatus: nullableEnum([
+    "normal",
+    "mild_impairment",
+    "moderate_impairment",
+    "severe_impairment",
+  ]).optional(),
+  usesHearingAid: z.boolean().optional(),
+
+  // Physical
+  physicalDisability: z.string().max(500).optional().nullable(),
+  mobilityAid: z.string().max(100).optional().nullable(),
+
+  // Vaccinations
+  vaccinationRecords: z.record(z.string()).optional().nullable(),
+
+  // Insurance
+  hasInsurance: z.boolean().optional(),
+  insuranceProvider: z.string().max(200).optional().nullable(),
+  insurancePolicyNo: z.string().max(100).optional().nullable(),
+  insuranceExpiry: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+
+  // Emergency
+  emergencyMedicalNotes: z.string().max(1000).optional().nullable(),
+  familyDoctorName: z.string().max(200).optional().nullable(),
+  familyDoctorPhone: z.string().max(20).optional().nullable(),
+  preferredHospital: z.string().max(200).optional().nullable(),
+
+  // Checkup Tracking
+  lastCheckupDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  nextCheckupDue: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+
+  // Dietary
+  dietaryRestrictions: z.string().max(500).optional().nullable(),
+});
+
 /**
  * Schema for creating a student
  */
-export const createStudentSchema = z.object({
-  firstName: z.string().min(1).max(255),
-  lastName: z.string().min(1).max(255),
-  gender: z.enum(["male", "female", "other"]).optional(),
-  // Accept both date (YYYY-MM-DD) and datetime (ISO 8601) formats
-  dob: z.string().refine(
-    (val) => !val || /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(val),
-    { message: "Invalid date format" }
-  ).optional(),
-  category: z.enum(["gen", "sc", "st", "obc", "minority"]).optional(),
-  isCwsn: z.boolean().optional().default(false),
-  photoUrl: photoUrlSchema,
-  admissionYear: z.number().int().min(2000).max(2100),
-  batchId: z.string().uuid().optional(),
-  parents: z.array(parentInputSchema).optional(),
-});
+export const createStudentSchema = z
+  .object({
+    firstName: z.string().min(1).max(255),
+    lastName: z.string().min(1).max(255),
+    gender: z.enum(["male", "female", "other"]).optional(),
+    // Accept both date (YYYY-MM-DD) and datetime (ISO 8601) formats
+    dob: z
+      .string()
+      .refine((val) => !val || /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(val), {
+        message: "Invalid date format",
+      })
+      .optional(),
+    category: z.enum(["gen", "sc", "st", "obc", "minority"]).optional(),
+    isCwsn: z.boolean().optional().default(false),
+    photoUrl: photoUrlSchema,
+    admissionYear: z.number().int().min(2000).max(2100),
+    batchId: z.string().uuid().optional(),
+    parents: z.array(parentInputSchema).optional(),
+    // New optional fields for transactional creation
+    health: studentHealthInputSchema.optional(),
+    batchFeeStructureId: z.string().uuid().optional(),
+    scholarshipIds: z.array(z.string().uuid()).optional(),
+    sessionId: z.string().uuid().optional(),
+  })
+  .refine(
+    (data) => {
+      // sessionId is required if batchFeeStructureId or scholarshipIds are provided
+      if (
+        data.batchFeeStructureId ||
+        (data.scholarshipIds && data.scholarshipIds.length > 0)
+      ) {
+        return !!data.sessionId;
+      }
+      return true;
+    },
+    {
+      message:
+        "sessionId is required when batchFeeStructureId or scholarshipIds are provided",
+      path: ["sessionId"],
+    },
+  );
 
 /**
  * Schema for updating a student
@@ -102,10 +217,12 @@ export const updateStudentSchema = z.object({
   lastName: z.string().min(1).max(255).optional(),
   gender: z.enum(["male", "female", "other"]).optional(),
   // Accept both date (YYYY-MM-DD) and datetime (ISO 8601) formats
-  dob: z.string().refine(
-    (val) => !val || /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(val),
-    { message: "Invalid date format" }
-  ).optional(),
+  dob: z
+    .string()
+    .refine((val) => !val || /^\d{4}-\d{2}-\d{2}(T.*)?$/.test(val), {
+      message: "Invalid date format",
+    })
+    .optional(),
   category: z.enum(["gen", "sc", "st", "obc", "minority"]).optional(),
   isCwsn: z.boolean().optional(),
   photoUrl: photoUrlSchema,
@@ -113,6 +230,8 @@ export const updateStudentSchema = z.object({
   batchId: z.string().uuid().nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
   parents: z.array(parentInputSchema).optional(),
+  // Health data (optional)
+  health: studentHealthInputSchema.optional(),
 });
 
 /**

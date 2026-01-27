@@ -2,7 +2,11 @@ import { prisma } from "../../config/database.js";
 import { createModuleLogger } from "../../config/logger.js";
 import { EVENT_STATUS } from "../../modules/events/event-emitter.js";
 import { processEvents } from "../../modules/notifications/notification.service.js";
-import type { StoredEvent, EventPayload, EventType } from "../../modules/events/event-emitter.js";
+import type {
+  StoredEvent,
+  EventPayload,
+  EventType,
+} from "../../modules/events/event-emitter.js";
 import type { JobResult } from "../job-tracker.js";
 
 const log = createModuleLogger("event-processor-job");
@@ -16,22 +20,22 @@ const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5, 6]; // Mon-Sat
 
 interface AttendanceWindow {
   startTime: string; // HH:mm
-  endTime: string;   // HH:mm
+  endTime: string; // HH:mm
   activeDays: number[];
 }
 
 /**
  * Event Processor Job
- * 
+ *
  * Processes pending events for each organization, but only during their
  * attendance window (based on period template). This prevents unnecessary
  * processing outside of school hours.
- * 
+ *
  * Window logic:
  * - Start: First period start + attendanceBufferMinutes
  * - End: Second period end
  * - Only runs on active days from the period template
- * 
+ *
  * @returns JobResult with processing stats
  */
 export async function processEventsJob(): Promise<JobResult> {
@@ -78,7 +82,10 @@ export async function processEventsJob(): Promise<JobResult> {
 
   if (orgs.length === 0) {
     log.debug("No organizations with notifications enabled");
-    return { skipped: true, metadata: { reason: "No orgs with notifications enabled" } };
+    return {
+      skipped: true,
+      metadata: { reason: "No orgs with notifications enabled" },
+    };
   }
 
   let totalProcessed = 0;
@@ -90,17 +97,17 @@ export async function processEventsJob(): Promise<JobResult> {
   for (const org of orgs) {
     // Get attendance window for this org
     const window = getAttendanceWindow(org);
-    
+
     // Check if we should process this org now
     if (!isWithinWindow(window, org.timezone)) {
       log.debug(
-        { 
-          orgId: org.id, 
+        {
+          orgId: org.id,
           orgName: org.name,
           window,
           timezone: org.timezone,
         },
-        "Org outside attendance window, skipping"
+        "Org outside attendance window, skipping",
       );
       orgsSkipped++;
       continue;
@@ -108,7 +115,7 @@ export async function processEventsJob(): Promise<JobResult> {
 
     log.debug(
       { orgId: org.id, orgName: org.name },
-      "Processing events for org (within attendance window)"
+      "Processing events for org (within attendance window)",
     );
 
     // Process events for each branch
@@ -131,7 +138,7 @@ export async function processEventsJob(): Promise<JobResult> {
 
       log.debug(
         { orgId: org.id, branchId: branch.id, count: pendingEvents.length },
-        "Processing pending events"
+        "Processing pending events",
       );
 
       // Convert to StoredEvent format
@@ -158,37 +165,37 @@ export async function processEventsJob(): Promise<JobResult> {
   if (totalProcessed > 0 || totalFailed > 0) {
     log.info(
       { processed: totalProcessed, failed: totalFailed, orgsProcessed },
-      "Event processor job completed"
+      "Event processor job completed",
     );
   }
 
   // If all orgs were skipped (outside window), return skipped
   if (orgsProcessed === 0) {
-    return { 
-      skipped: true, 
-      metadata: { 
+    return {
+      skipped: true,
+      metadata: {
         reason: "All orgs outside attendance window",
         orgsSkipped,
-      } 
+      },
     };
   }
 
   // If we processed orgs but found no events
   if (totalProcessed === 0 && totalFailed === 0) {
-    return { 
-      skipped: true, 
-      metadata: { 
+    return {
+      skipped: true,
+      metadata: {
         reason: "No pending events",
         orgsProcessed,
         orgsSkipped,
-      } 
+      },
     };
   }
 
   return {
     recordsProcessed: totalProcessed,
-    metadata: { 
-      processed: totalProcessed, 
+    metadata: {
+      processed: totalProcessed,
       failed: totalFailed,
       orgsProcessed,
       orgsSkipped,
@@ -211,7 +218,7 @@ function getAttendanceWindow(org: {
   }>;
 }): AttendanceWindow {
   const template = org.periodTemplates[0];
-  
+
   // If no template, use defaults
   if (!template || template.slots.length === 0) {
     return {
@@ -221,8 +228,8 @@ function getAttendanceWindow(org: {
     };
   }
 
-  const firstPeriod = template.slots.find(s => s.periodNumber === 1);
-  const secondPeriod = template.slots.find(s => s.periodNumber === 2);
+  const firstPeriod = template.slots.find((s) => s.periodNumber === 1);
+  const secondPeriod = template.slots.find((s) => s.periodNumber === 2);
 
   // If missing periods, use defaults
   if (!firstPeriod) {
@@ -234,10 +241,14 @@ function getAttendanceWindow(org: {
   }
 
   // Calculate window start: first period start + buffer
-  const windowStart = addMinutesToTime(firstPeriod.startTime, org.attendanceBufferMinutes);
-  
+  const windowStart = addMinutesToTime(
+    firstPeriod.startTime,
+    org.attendanceBufferMinutes,
+  );
+
   // Window end: second period end (or first period end + 1 hour if no second period)
-  const windowEnd = secondPeriod?.endTime || addMinutesToTime(firstPeriod.endTime, 60);
+  const windowEnd =
+    secondPeriod?.endTime || addMinutesToTime(firstPeriod.endTime, 60);
 
   return {
     startTime: windowStart,
@@ -261,26 +272,30 @@ function isWithinWindow(window: AttendanceWindow, timezone: string): boolean {
   });
 
   const parts = formatter.formatToParts(now);
-  const hour = parts.find(p => p.type === "hour")?.value || "00";
-  const minute = parts.find(p => p.type === "minute")?.value || "00";
-  const weekday = parts.find(p => p.type === "weekday")?.value || "Mon";
+  const hour = parts.find((p) => p.type === "hour")?.value || "00";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  const weekday = parts.find((p) => p.type === "weekday")?.value || "Mon";
 
   const currentTime = `${hour}:${minute}`;
   const currentDay = weekdayToNumber(weekday);
 
   // Check if today is an active day
   if (!window.activeDays.includes(currentDay)) {
-    log.debug({ currentDay, activeDays: window.activeDays }, "Not an active day");
+    log.debug(
+      { currentDay, activeDays: window.activeDays },
+      "Not an active day",
+    );
     return false;
   }
 
   // Check if current time is within window
-  const inWindow = currentTime >= window.startTime && currentTime <= window.endTime;
-  
+  const inWindow =
+    currentTime >= window.startTime && currentTime <= window.endTime;
+
   if (!inWindow) {
     log.debug(
       { currentTime, windowStart: window.startTime, windowEnd: window.endTime },
-      "Outside time window"
+      "Outside time window",
     );
   }
 

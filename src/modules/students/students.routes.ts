@@ -76,7 +76,7 @@ export async function studentsRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.STUDENT_VIEW),
       ],
     },
-    controller.listStudents
+    controller.listStudents,
   );
 
   /**
@@ -105,7 +105,7 @@ export async function studentsRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.STUDENT_VIEW),
       ],
     },
-    controller.getStudent
+    controller.getStudent,
   );
 
   /**
@@ -119,7 +119,8 @@ export async function studentsRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Students"],
         summary: "Create a new student",
-        description: "Creates a new student with optional parent information",
+        description:
+          "Creates a new student atomically with optional parent information, health data, fee structure, and scholarships. All operations happen in a single transaction.",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -159,10 +160,176 @@ export async function studentsRoutes(app: FastifyInstance) {
                     description: "Base64 encoded photo for parent",
                     nullable: true,
                   },
+                  isPrimaryContact: { type: "boolean", default: false },
                 },
               },
             },
-            
+            health: {
+              type: "object",
+              description: "Student health data",
+              properties: {
+                bloodGroup: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "A_positive",
+                        "A_negative",
+                        "B_positive",
+                        "B_negative",
+                        "AB_positive",
+                        "AB_negative",
+                        "O_positive",
+                        "O_negative",
+                        "unknown",
+                      ],
+                    },
+                  ],
+                },
+                heightCm: { type: "number", minimum: 0, nullable: true },
+                weightKg: { type: "number", minimum: 0, nullable: true },
+                allergies: { type: "string", maxLength: 500, nullable: true },
+                chronicConditions: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                currentMedications: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                pastSurgeries: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                visionLeft: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "corrected_with_glasses",
+                        "corrected_with_lenses",
+                        "impaired",
+                      ],
+                    },
+                  ],
+                },
+                visionRight: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "corrected_with_glasses",
+                        "corrected_with_lenses",
+                        "impaired",
+                      ],
+                    },
+                  ],
+                },
+                usesGlasses: { type: "boolean" },
+                hearingStatus: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "mild_impairment",
+                        "moderate_impairment",
+                        "severe_impairment",
+                      ],
+                    },
+                  ],
+                },
+                usesHearingAid: { type: "boolean" },
+                physicalDisability: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                mobilityAid: { type: "string", maxLength: 100, nullable: true },
+                vaccinationRecords: {
+                  type: "object",
+                  additionalProperties: { type: "string" },
+                  nullable: true,
+                },
+                hasInsurance: { type: "boolean" },
+                insuranceProvider: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                insurancePolicyNo: {
+                  type: "string",
+                  maxLength: 100,
+                  nullable: true,
+                },
+                insuranceExpiry: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                emergencyMedicalNotes: {
+                  type: "string",
+                  maxLength: 1000,
+                  nullable: true,
+                },
+                familyDoctorName: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                familyDoctorPhone: {
+                  type: "string",
+                  maxLength: 20,
+                  nullable: true,
+                },
+                preferredHospital: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                lastCheckupDate: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                nextCheckupDue: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                dietaryRestrictions: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+              },
+            },
+            batchFeeStructureId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Batch fee structure ID to apply. Requires sessionId.",
+            },
+            scholarshipIds: {
+              type: "array",
+              items: { type: "string", format: "uuid" },
+              description: "Scholarship IDs to assign. Requires sessionId.",
+            },
+            sessionId: {
+              type: "string",
+              format: "uuid",
+              description:
+                "Academic session ID. Required if batchFeeStructureId or scholarshipIds are provided.",
+            },
           },
         },
       },
@@ -171,7 +338,7 @@ export async function studentsRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.STUDENT_EDIT),
       ],
     },
-    controller.createStudent
+    controller.createStudent,
   );
 
   /**
@@ -232,6 +399,156 @@ export async function studentsRoutes(app: FastifyInstance) {
                     description: "Base64 encoded photo for parent",
                     nullable: true,
                   },
+                  isPrimaryContact: { type: "boolean", default: false },
+                },
+              },
+            },
+            health: {
+              type: "object",
+              description: "Student health data",
+              properties: {
+                bloodGroup: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "A_positive",
+                        "A_negative",
+                        "B_positive",
+                        "B_negative",
+                        "AB_positive",
+                        "AB_negative",
+                        "O_positive",
+                        "O_negative",
+                        "unknown",
+                      ],
+                    },
+                  ],
+                },
+                heightCm: { type: "number", minimum: 0, nullable: true },
+                weightKg: { type: "number", minimum: 0, nullable: true },
+                allergies: { type: "string", maxLength: 500, nullable: true },
+                chronicConditions: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                currentMedications: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                pastSurgeries: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                visionLeft: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "corrected_with_glasses",
+                        "corrected_with_lenses",
+                        "impaired",
+                      ],
+                    },
+                  ],
+                },
+                visionRight: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "corrected_with_glasses",
+                        "corrected_with_lenses",
+                        "impaired",
+                      ],
+                    },
+                  ],
+                },
+                usesGlasses: { type: "boolean" },
+                hearingStatus: {
+                  oneOf: [
+                    { type: "null" },
+                    {
+                      type: "string",
+                      enum: [
+                        "normal",
+                        "mild_impairment",
+                        "moderate_impairment",
+                        "severe_impairment",
+                      ],
+                    },
+                  ],
+                },
+                usesHearingAid: { type: "boolean" },
+                physicalDisability: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
+                },
+                mobilityAid: { type: "string", maxLength: 100, nullable: true },
+                vaccinationRecords: {
+                  type: "object",
+                  additionalProperties: { type: "string" },
+                  nullable: true,
+                },
+                hasInsurance: { type: "boolean" },
+                insuranceProvider: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                insurancePolicyNo: {
+                  type: "string",
+                  maxLength: 100,
+                  nullable: true,
+                },
+                insuranceExpiry: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                emergencyMedicalNotes: {
+                  type: "string",
+                  maxLength: 1000,
+                  nullable: true,
+                },
+                familyDoctorName: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                familyDoctorPhone: {
+                  type: "string",
+                  maxLength: 20,
+                  nullable: true,
+                },
+                preferredHospital: {
+                  type: "string",
+                  maxLength: 200,
+                  nullable: true,
+                },
+                lastCheckupDate: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                nextCheckupDue: {
+                  type: "string",
+                  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+                  nullable: true,
+                },
+                dietaryRestrictions: {
+                  type: "string",
+                  maxLength: 500,
+                  nullable: true,
                 },
               },
             },
@@ -243,7 +560,7 @@ export async function studentsRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.STUDENT_EDIT),
       ],
     },
-    controller.updateStudent
+    controller.updateStudent,
   );
 
   /**
@@ -272,6 +589,6 @@ export async function studentsRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.STUDENT_EDIT),
       ],
     },
-    controller.deleteStudent
+    controller.deleteStudent,
   );
 }

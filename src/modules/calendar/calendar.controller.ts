@@ -41,7 +41,7 @@ export async function createEvent(
   const event = await calendarService.createEvent(
     input,
     request.scope,
-    request.user.id
+    request.userContext.userId
   );
   return reply.code(201).send(event);
 }

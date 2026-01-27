@@ -59,7 +59,7 @@ export async function createHomework(
   const result = await homeworkService.createHomework(
     input,
     request.scope,
-    request.user.id
+    request.userContext.userId
   );
   return reply.code(201).send(result);
 }
@@ -138,7 +138,7 @@ export async function gradeSubmission(
     submissionId,
     input,
     request.scope,
-    request.user.id
+    request.userContext.userId
   );
   return reply.code(200).send(result);
 }

@@ -1,31 +1,31 @@
-import { PrismaClient } from '@prisma/client';
-import { createModuleLogger } from './logger.js';
+import { PrismaClient } from "@prisma/client";
+import { createModuleLogger } from "./logger.js";
 
-const log = createModuleLogger('database');
+const log = createModuleLogger("database");
 
 log.info("Creating Prisma client...");
 
 export const prisma = new PrismaClient({
   log: [
-    { level: 'query', emit: 'event' },
-    { level: 'error', emit: 'stdout' },
-    { level: 'warn', emit: 'stdout' },
+    { level: "query", emit: "event" },
+    { level: "error", emit: "stdout" },
+    { level: "warn", emit: "stdout" },
   ],
 });
 
 // Log query events in development when debug logging is enabled
-if (process.env.NODE_ENV === 'development' && process.env.LOG_LEVEL === 'debug') {
-  prisma.$on('query', (e) => {
-    log.debug(
-      { 
-        query: e.query, 
-        params: e.params, 
-        duration: e.duration 
-      }, 
-      "Database query executed"
-    );
-  });
-}
+// if (process.env.NODE_ENV === 'development' && process.env.LOG_LEVEL === 'debug') {
+//   prisma.$on('query', (e) => {
+//     log.debug(
+//       {
+//         query: e.query,
+//         params: e.params,
+//         duration: e.duration
+//       },
+//       "Database query executed"
+//     );
+//   });
+// }
 
 log.info("Prisma client created");
 
@@ -41,7 +41,7 @@ export async function testDbConnection(): Promise<boolean> {
   } catch (error) {
     log.error(
       { err: error instanceof Error ? error.message : "Unknown error" },
-      "Database connection failed"
+      "Database connection failed",
     );
     return false;
   }

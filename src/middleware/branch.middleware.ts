@@ -1,6 +1,10 @@
 import type { FastifyReply } from "fastify";
 import type { ProtectedRequest, TenantScope } from "../types/request.js";
-import { UnauthorizedError, NotFoundError, ForbiddenError } from "../utils/error-handler.js";
+import {
+  UnauthorizedError,
+  NotFoundError,
+  ForbiddenError,
+} from "../utils/error-handler.js";
 
 /**
  * Branch context validation middleware.
@@ -101,10 +105,12 @@ export async function branchContextMiddleware(
  */
 export async function setScopeMiddleware(
   request: ProtectedRequest,
-  reply: FastifyReply
+  _reply: FastifyReply
 ): Promise<void> {
   if (!request.userContext) {
-    throw new UnauthorizedError("User context not found - auth middleware must run first");
+    throw new UnauthorizedError(
+      "User context not found - auth middleware must run first"
+    );
   }
   request.scope = {
     orgId: request.userContext.orgId,
@@ -125,9 +131,13 @@ export async function setScopeMiddleware(
  *     where: { ...scope, status: 'active' }
  *   });
  */
-export function getTenantScopeFromRequest(request: ProtectedRequest): TenantScope {
+export function getTenantScopeFromRequest(
+  request: ProtectedRequest
+): TenantScope {
   if (!request.userContext) {
-    throw new UnauthorizedError("User context not found - auth middleware must run first");
+    throw new UnauthorizedError(
+      "User context not found - auth middleware must run first"
+    );
   }
   return {
     orgId: request.userContext.orgId,

@@ -96,7 +96,8 @@ export async function createStudent(
   }
 
   const scope = getTenantScopeFromRequest(request);
-  const student = await studentsService.createStudent(body.data, scope);
+  const userId = request.userContext.userId;
+  const student = await studentsService.createStudent(body.data, scope, userId);
 
   // Handle unexpected null response from service
   if (!student) {
