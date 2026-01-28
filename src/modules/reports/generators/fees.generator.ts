@@ -34,11 +34,12 @@ export async function generateFeesReport(
   type: "fee_collection" | "fee_defaulters",
   format: ReportFormat,
   scope: ReportScope,
-  params: FeesReportParams
+  params: FeesReportParams,
 ): Promise<string> {
-  const data = type === "fee_collection"
-    ? await getFeeCollectionData(scope, params)
-    : await getFeeDefaultersData(scope);
+  const data =
+    type === "fee_collection"
+      ? await getFeeCollectionData(scope, params)
+      : await getFeeDefaultersData(scope);
 
   const filename = `fees_${type}_${Date.now()}.${format === "pdf" ? "pdf" : "xlsx"}`;
   const filePath = path.join(reportsDir, filename);
@@ -89,10 +90,11 @@ interface FeeDefaultersData {
 
 /**
  * Get fee collection data
+ * Uses InstallmentPayment table from the consolidated fee system
  */
 async function getFeeCollectionData(
   scope: ReportScope,
-  params: FeesReportParams
+  params: FeesReportParams,
 ): Promise<FeeCollectionData> {
   const startDate = params.startDate
     ? new Date(params.startDate)
@@ -104,29 +106,35 @@ async function getFeeCollectionData(
       gte: startDate,
       lte: endDate,
     },
-    studentFee: {
-      student: {
-        orgId: scope.orgId,
+    installment: {
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+        },
       },
     },
   };
 
   if (scope.branchId) {
-    where.studentFee.student.branchId = scope.branchId;
+    where.installment.studentFeeStructure.student.branchId = scope.branchId;
   }
 
-  const payments = await prisma.feePayment.findMany({
+  const payments = await prisma.installmentPayment.findMany({
     where,
     include: {
-      studentFee: {
+      installment: {
         include: {
-          student: {
-            select: {
-              firstName: true,
-              lastName: true,
-              batch: {
+          studentFeeStructure: {
+            include: {
+              student: {
                 select: {
-                  name: true,
+                  firstName: true,
+                  lastName: true,
+                  batch: {
+                    select: {
+                      name: true,
+                    },
+                  },
                 },
               },
             },
@@ -163,8 +171,8 @@ async function getFeeCollectionData(
     })),
     payments: payments.map((p) => ({
       date: p.receivedAt.toISOString(),
-      studentName: `${p.studentFee.student.firstName} ${p.studentFee.student.lastName}`,
-      batchName: p.studentFee.student.batch?.name || "N/A",
+      studentName: `${p.installment.studentFeeStructure.student.firstName} ${p.installment.studentFeeStructure.student.lastName}`,
+      batchName: p.installment.studentFeeStructure.student.batch?.name || "N/A",
       amount: p.amount,
       mode: p.paymentMode,
       receivedBy: `${p.receivedBy.firstName} ${p.receivedBy.lastName}`,
@@ -174,40 +182,50 @@ async function getFeeCollectionData(
 
 /**
  * Get fee defaulters data
+ * Uses FeeInstallment table from the consolidated fee system
  */
-async function getFeeDefaultersData(scope: ReportScope): Promise<FeeDefaultersData> {
+async function getFeeDefaultersData(
+  scope: ReportScope,
+): Promise<FeeDefaultersData> {
   const today = new Date();
 
   const where: any = {
-    status: { in: ["pending", "partial"] },
+    status: { in: ["overdue", "partial"] },
     dueDate: { lt: today },
-    student: {
-      orgId: scope.orgId,
-      status: "active",
+    studentFeeStructure: {
+      student: {
+        orgId: scope.orgId,
+        status: "active",
+      },
     },
   };
 
   if (scope.branchId) {
-    where.student.branchId = scope.branchId;
+    where.studentFeeStructure.student.branchId = scope.branchId;
   }
 
-  const overdueFees = await prisma.studentFee.findMany({
+  const overdueInstallments = await prisma.feeInstallment.findMany({
     where,
     include: {
-      student: {
-        select: {
-          firstName: true,
-          lastName: true,
-          batch: {
-            select: { name: true },
-          },
-          studentParents: {
-            include: {
-              parent: {
-                select: { phone: true },
+      studentFeeStructure: {
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              batch: {
+                select: { name: true },
+              },
+              studentParents: {
+                include: {
+                  parent: {
+                    select: { phone: true },
+                  },
+                },
+                take: 1,
               },
             },
-            take: 1,
           },
         },
       },
@@ -227,24 +245,25 @@ async function getFeeDefaultersData(scope: ReportScope): Promise<FeeDefaultersDa
     }
   >();
 
-  for (const fee of overdueFees) {
-    const studentId = fee.studentId;
-    const pending = fee.totalAmount - fee.paidAmount;
+  for (const installment of overdueInstallments) {
+    const student = installment.studentFeeStructure.student;
+    const studentId = student.id;
+    const pending = installment.amount - installment.paidAmount;
 
     if (!studentMap.has(studentId)) {
       studentMap.set(studentId, {
-        name: `${fee.student.firstName} ${fee.student.lastName}`,
-        batchName: fee.student.batch?.name || "N/A",
+        name: `${student.firstName} ${student.lastName}`,
+        batchName: student.batch?.name || "N/A",
         totalPending: 0,
-        oldestDueDate: fee.dueDate,
-        parentPhone: fee.student.studentParents[0]?.parent.phone || "N/A",
+        oldestDueDate: installment.dueDate,
+        parentPhone: student.studentParents[0]?.parent.phone || "N/A",
       });
     }
 
     const entry = studentMap.get(studentId)!;
     entry.totalPending += pending;
-    if (fee.dueDate < entry.oldestDueDate) {
-      entry.oldestDueDate = fee.dueDate;
+    if (installment.dueDate < entry.oldestDueDate) {
+      entry.oldestDueDate = installment.dueDate;
     }
   }
 
@@ -252,7 +271,7 @@ async function getFeeDefaultersData(scope: ReportScope): Promise<FeeDefaultersDa
     .map((s) => ({
       ...s,
       daysPastDue: Math.floor(
-        (today.getTime() - s.oldestDueDate.getTime()) / (1000 * 60 * 60 * 24)
+        (today.getTime() - s.oldestDueDate.getTime()) / (1000 * 60 * 60 * 24),
       ),
     }))
     .sort((a, b) => b.totalPending - a.totalPending);
@@ -268,7 +287,7 @@ async function getFeeDefaultersData(scope: ReportScope): Promise<FeeDefaultersDa
  */
 async function generateCollectionPDF(
   data: FeeCollectionData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50 });
@@ -283,7 +302,7 @@ async function generateCollectionPDF(
     // Report info
     doc.fontSize(12);
     doc.text(
-      `Period: ${formatDate(data.startDate)} - ${formatDate(data.endDate)}`
+      `Period: ${formatDate(data.startDate)} - ${formatDate(data.endDate)}`,
     );
     doc.text(`Total Collected: ${formatCurrency(data.totalCollected)}`);
     doc.moveDown();
@@ -308,7 +327,10 @@ async function generateCollectionPDF(
     doc.text("Mode", cols[4], tableTop);
     doc.text("By", cols[5], tableTop);
 
-    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+    doc
+      .moveTo(50, tableTop + 15)
+      .lineTo(550, tableTop + 15)
+      .stroke();
 
     // Table rows
     doc.font("Helvetica").fontSize(10);
@@ -342,7 +364,7 @@ async function generateCollectionPDF(
  */
 async function generateCollectionExcel(
   data: FeeCollectionData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Fee Collection");
@@ -352,8 +374,10 @@ async function generateCollectionExcel(
   worksheet.getCell("A1").value = "Fee Collection Report";
   worksheet.getCell("A1").font = { size: 18, bold: true };
 
-  worksheet.getCell("A3").value = `Period: ${formatDate(data.startDate)} - ${formatDate(data.endDate)}`;
-  worksheet.getCell("A4").value = `Total Collected: ${formatCurrency(data.totalCollected)}`;
+  worksheet.getCell("A3").value =
+    `Period: ${formatDate(data.startDate)} - ${formatDate(data.endDate)}`;
+  worksheet.getCell("A4").value =
+    `Total Collected: ${formatCurrency(data.totalCollected)}`;
 
   // Headers
   worksheet.getRow(6).values = [
@@ -397,7 +421,7 @@ async function generateCollectionExcel(
  */
 async function generateDefaultersPDF(
   data: FeeDefaultersData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50 });
@@ -428,7 +452,10 @@ async function generateDefaultersPDF(
     doc.text("Days", cols[4], tableTop);
     doc.text("Phone", cols[5], tableTop);
 
-    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+    doc
+      .moveTo(50, tableTop + 15)
+      .lineTo(550, tableTop + 15)
+      .stroke();
 
     doc.font("Helvetica");
     let y = tableTop + 25;
@@ -460,7 +487,7 @@ async function generateDefaultersPDF(
  */
 async function generateDefaultersExcel(
   data: FeeDefaultersData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Fee Defaulters");
@@ -470,7 +497,8 @@ async function generateDefaultersExcel(
   worksheet.getCell("A1").font = { size: 18, bold: true };
 
   worksheet.getCell("A3").value = `Total Students: ${data.students.length}`;
-  worksheet.getCell("A4").value = `Total Pending: ${formatCurrency(data.totalPending)}`;
+  worksheet.getCell("A4").value =
+    `Total Pending: ${formatCurrency(data.totalPending)}`;
 
   worksheet.getRow(6).values = [
     "Student",

@@ -23,18 +23,20 @@ async function processWebhook(payload: RazorpayWebhookPayload): Promise<void> {
     case RAZORPAY_EVENTS.PAYMENT_LINK_PAID: {
       const paymentLink = payload.payload.payment_link.entity;
       const referenceId = paymentLink.reference_id;
+      const razorpayPaymentId = payload.payload.payment?.entity.id;
 
       console.log("Payment link paid:", {
         referenceId,
         amount: paymentLink.amount_paid,
+        razorpayPaymentId,
       });
 
       try {
-        await markPaymentLinkPaid(
+        await markPaymentLinkPaid(referenceId, razorpayPaymentId);
+        console.log(
+          "Payment link marked as paid and InstallmentPayment created:",
           referenceId,
-          payload.payload.payment?.entity.id
         );
-        console.log("Payment link marked as paid:", referenceId);
       } catch (error) {
         console.error("Failed to mark payment link as paid:", error);
       }
@@ -106,7 +108,7 @@ export async function razorpayWebhookRoutes(app: FastifyInstance) {
       } catch (err) {
         done(err as Error, undefined);
       }
-    }
+    },
   );
 
   /**
@@ -140,6 +142,6 @@ export async function razorpayWebhookRoutes(app: FastifyInstance) {
         console.error("Razorpay webhook error:", error);
         return reply.code(500).send({ error: "Processing error" });
       }
-    }
+    },
   );
 }

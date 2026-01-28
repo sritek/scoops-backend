@@ -1,6 +1,5 @@
 import { prisma } from "../../config/database.js";
-import type {
-  StoredEvent} from "../events/index.js";
+import type { StoredEvent } from "../events/index.js";
 import {
   EVENT_TYPES,
   markEventProcessed,
@@ -79,8 +78,15 @@ export async function processEvent(event: StoredEvent): Promise<void> {
 
     // Validate phone number
     if (!isValidIndianPhone(recipientPhone)) {
-      console.warn(`Invalid phone number for event: ${event.id}, phone: ${recipientPhone}`);
-      await markEventFailed(event.id, event.orgId, event.branchId, "Invalid phone number");
+      console.warn(
+        `Invalid phone number for event: ${event.id}, phone: ${recipientPhone}`,
+      );
+      await markEventFailed(
+        event.id,
+        event.orgId,
+        event.branchId,
+        "Invalid phone number",
+      );
       return;
     }
 
@@ -90,7 +96,7 @@ export async function processEvent(event: StoredEvent): Promise<void> {
       event.branchId,
       recipientPhone,
       template.id,
-      event.payload.entityId
+      event.payload.entityId,
     );
 
     if (isDuplicate) {
@@ -116,7 +122,9 @@ export async function processEvent(event: StoredEvent): Promise<void> {
         branchId: event.branchId,
         recipientPhone: normalizePhone(recipientPhone),
         templateId: template.id,
-        status: result.success ? NOTIFICATION_STATUS.SENT : NOTIFICATION_STATUS.FAILED,
+        status: result.success
+          ? NOTIFICATION_STATUS.SENT
+          : NOTIFICATION_STATUS.FAILED,
         providerMessageId: result.messageId,
         errorMessage: result.error,
         sentAt: new Date(),
@@ -130,16 +138,27 @@ export async function processEvent(event: StoredEvent): Promise<void> {
       await markEventProcessed(event.id, event.orgId, event.branchId);
       console.log(`Notification sent for event: ${event.id}`);
     } else {
-      await markEventFailed(event.id, event.orgId, event.branchId, result.error || "Unknown error");
+      await markEventFailed(
+        event.id,
+        event.orgId,
+        event.branchId,
+        result.error || "Unknown error",
+      );
       console.error(`Notification failed for event: ${event.id}`, result.error);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     console.error(`Error processing event: ${event.id}`, error);
-    
+
     // Wrap markEventFailed in try/catch to prevent double-failure
     try {
-      await markEventFailed(event.id, event.orgId, event.branchId, errorMessage);
+      await markEventFailed(
+        event.id,
+        event.orgId,
+        event.branchId,
+        errorMessage,
+      );
     } catch (markError) {
       console.error(`Failed to mark event ${event.id} as failed:`, markError);
     }
@@ -200,7 +219,7 @@ async function getRecipientPhone(event: StoredEvent): Promise<string | null> {
 
     case EVENT_TYPES.BIRTHDAY: {
       // Get parent phone for birthday student - scoped by tenant
-      const studentId = data.studentId as string || entityId;
+      const studentId = (data.studentId as string) || entityId;
       if (!studentId) return null;
 
       const studentParent = await prisma.studentParent.findFirst({
@@ -233,7 +252,7 @@ async function checkDuplicateNotification(
   branchId: string,
   recipientPhone: string,
   templateId: string,
-  entityId: string
+  entityId: string,
 ): Promise<boolean> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -263,7 +282,7 @@ async function checkDuplicateNotification(
  * Build message parameters from event data - WITH TENANT SCOPING
  */
 async function buildMessageParams(
-  event: StoredEvent
+  event: StoredEvent,
 ): Promise<Record<string, string>> {
   const { data, entityId } = event.payload;
 
@@ -278,7 +297,9 @@ async function buildMessageParams(
         select: { firstName: true, lastName: true },
       });
       return {
-        studentName: student ? formatFullName(student.firstName, student.lastName) : "Student",
+        studentName: student
+          ? formatFullName(student.firstName, student.lastName)
+          : "Student",
         date: (data.date as string) || new Date().toISOString().split("T")[0],
       };
     }
@@ -294,7 +315,9 @@ async function buildMessageParams(
         select: { firstName: true, lastName: true },
       });
       return {
-        studentName: student ? formatFullName(student.firstName, student.lastName) : "Student",
+        studentName: student
+          ? formatFullName(student.firstName, student.lastName)
+          : "Student",
         amount: String(Number(data.totalAmount) || 0),
         dueDate: (data.dueDate as string) || "",
       };
@@ -311,7 +334,9 @@ async function buildMessageParams(
         select: { firstName: true, lastName: true },
       });
       return {
-        studentName: student ? formatFullName(student.firstName, student.lastName) : "Student",
+        studentName: student
+          ? formatFullName(student.firstName, student.lastName)
+          : "Student",
         amount: String(Number(data.amount) || 0),
         paymentMode: (data.paymentMode as string) || "cash",
       };
@@ -379,7 +404,7 @@ export async function processEvents(events: StoredEvent[]): Promise<{
 export async function getNotificationLogs(
   orgId: string,
   branchId: string,
-  limit: number = 50
+  limit: number = 50,
 ) {
   return prisma.notificationLog.findMany({
     where: {
@@ -407,7 +432,7 @@ export async function getNotificationLogs(
 export async function getFailedNotifications(
   orgId: string,
   branchId: string,
-  limit: number = 50
+  limit: number = 50,
 ) {
   return prisma.notificationLog.findMany({
     where: {
@@ -428,7 +453,7 @@ export async function getFailedNotifications(
 export async function retryNotification(
   notificationId: string,
   orgId: string,
-  branchId: string
+  branchId: string,
 ): Promise<boolean> {
   const notification = await prisma.notificationLog.findFirst({
     where: {
@@ -451,7 +476,7 @@ export async function retryNotification(
     notification.entityType,
     notification.entityId,
     orgId,
-    branchId
+    branchId,
   );
 
   // Resend
@@ -465,7 +490,9 @@ export async function retryNotification(
   await prisma.notificationLog.update({
     where: { id: notificationId },
     data: {
-      status: result.success ? NOTIFICATION_STATUS.SENT : NOTIFICATION_STATUS.FAILED,
+      status: result.success
+        ? NOTIFICATION_STATUS.SENT
+        : NOTIFICATION_STATUS.FAILED,
       providerMessageId: result.messageId,
       errorMessage: result.error,
       sentAt: new Date(),
@@ -482,7 +509,7 @@ async function rebuildMessageParams(
   entityType: string | null,
   entityId: string | null,
   orgId: string,
-  branchId: string
+  branchId: string,
 ): Promise<Record<string, string>> {
   if (!entityType || !entityId) {
     return {};
@@ -495,38 +522,24 @@ async function rebuildMessageParams(
         select: { firstName: true, lastName: true },
       });
       return {
-        studentName: student ? formatFullName(student.firstName, student.lastName) : "Student",
+        studentName: student
+          ? formatFullName(student.firstName, student.lastName)
+          : "Student",
         date: new Date().toISOString().split("T")[0],
       };
     }
 
-    case "student_fee": {
-      const fee = await prisma.studentFee.findFirst({
+    case "student_fee":
+    case "fee_installment": {
+      const installment = await prisma.feeInstallment.findFirst({
         where: {
           id: entityId,
-          student: { orgId, branchId },
-        },
-        include: {
-          student: { select: { firstName: true, lastName: true } },
-        },
-      });
-      return {
-        studentName: fee ? formatFullName(fee.student.firstName, fee.student.lastName) : "Student",
-        amount: String(fee?.totalAmount || 0),
-        dueDate: fee?.dueDate?.toISOString().split("T")[0] || "",
-      };
-    }
-
-    case "fee_payment": {
-      const payment = await prisma.feePayment.findFirst({
-        where: {
-          id: entityId,
-          studentFee: {
+          studentFeeStructure: {
             student: { orgId, branchId },
           },
         },
         include: {
-          studentFee: {
+          studentFeeStructure: {
             include: {
               student: { select: { firstName: true, lastName: true } },
             },
@@ -534,7 +547,47 @@ async function rebuildMessageParams(
         },
       });
       return {
-        studentName: payment ? formatFullName(payment.studentFee.student.firstName, payment.studentFee.student.lastName) : "Student",
+        studentName: installment
+          ? formatFullName(
+              installment.studentFeeStructure.student.firstName,
+              installment.studentFeeStructure.student.lastName,
+            )
+          : "Student",
+        amount: String(installment?.amount || 0),
+        dueDate: installment?.dueDate?.toISOString().split("T")[0] || "",
+      };
+    }
+
+    case "fee_payment":
+    case "installment_payment": {
+      const payment = await prisma.installmentPayment.findFirst({
+        where: {
+          id: entityId,
+          installment: {
+            studentFeeStructure: {
+              student: { orgId, branchId },
+            },
+          },
+        },
+        include: {
+          installment: {
+            include: {
+              studentFeeStructure: {
+                include: {
+                  student: { select: { firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      return {
+        studentName: payment
+          ? formatFullName(
+              payment.installment.studentFeeStructure.student.firstName,
+              payment.installment.studentFeeStructure.student.lastName,
+            )
+          : "Student",
         amount: String(payment?.amount || 0),
         paymentMode: payment?.paymentMode || "cash",
       };

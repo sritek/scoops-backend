@@ -33,20 +33,27 @@ export async function generatePerformanceReport(
   type: "student_performance" | "branch_summary",
   format: ReportFormat,
   scope: ReportScope,
-  params: PerformanceReportParams
+  params: PerformanceReportParams,
 ): Promise<string> {
-  const data = type === "student_performance"
-    ? await getStudentPerformanceData(scope, params)
-    : await getBranchSummaryData(scope);
+  const data =
+    type === "student_performance"
+      ? await getStudentPerformanceData(scope, params)
+      : await getBranchSummaryData(scope);
 
   const filename = `${type}_${Date.now()}.${format === "pdf" ? "pdf" : "xlsx"}`;
   const filePath = path.join(reportsDir, filename);
 
   if (type === "student_performance") {
     if (format === "pdf") {
-      await generateStudentPerformancePDF(data as StudentPerformanceData, filePath);
+      await generateStudentPerformancePDF(
+        data as StudentPerformanceData,
+        filePath,
+      );
     } else {
-      await generateStudentPerformanceExcel(data as StudentPerformanceData, filePath);
+      await generateStudentPerformanceExcel(
+        data as StudentPerformanceData,
+        filePath,
+      );
     }
   } else {
     if (format === "pdf") {
@@ -93,7 +100,7 @@ interface BranchSummaryData {
  */
 async function getStudentPerformanceData(
   scope: ReportScope,
-  params: PerformanceReportParams
+  params: PerformanceReportParams,
 ): Promise<StudentPerformanceData> {
   const where: any = {
     orgId: scope.orgId,
@@ -125,9 +132,9 @@ async function getStudentPerformanceData(
         orderBy: { markedAt: "desc" },
         take: 30, // Last 30 attendance records
       },
-      fees: {
+      feeStructures: {
         include: {
-          payments: true,
+          installments: true,
         },
       },
       // examScores: {
@@ -144,21 +151,29 @@ async function getStudentPerformanceData(
     // Calculate attendance percentage
     const totalAttendance = student.attendanceRecords.length;
     const presentCount = student.attendanceRecords.filter(
-      (r) => r.status === "present"
+      (r) => r.status === "present",
     ).length;
     const attendancePercentage =
-      totalAttendance > 0 ? Math.round((presentCount / totalAttendance) * 100) : 0;
+      totalAttendance > 0
+        ? Math.round((presentCount / totalAttendance) * 100)
+        : 0;
 
-    // Calculate fee status
-    const totalFees = student.fees.reduce((sum, f) => sum + f.totalAmount, 0);
-    const paidFees = student.fees.reduce((sum, f) => sum + f.paidAmount, 0);
+    // Calculate fee status from StudentFeeStructure and FeeInstallment
+    let totalFees = 0;
+    let paidFees = 0;
+    for (const structure of student.feeStructures) {
+      totalFees += structure.netAmount;
+      for (const installment of structure.installments) {
+        paidFees += installment.paidAmount;
+      }
+    }
     const pendingFees = totalFees - paidFees;
     const feeStatus =
       pendingFees === 0
         ? "Paid"
         : pendingFees === totalFees
-        ? "Pending"
-        : "Partial";
+          ? "Pending"
+          : "Partial";
 
     // Note: Exam scores would require the Exam model to be populated
     // For now, we'll show N/A
@@ -182,7 +197,9 @@ async function getStudentPerformanceData(
 /**
  * Get branch summary data
  */
-async function getBranchSummaryData(scope: ReportScope): Promise<BranchSummaryData> {
+async function getBranchSummaryData(
+  scope: ReportScope,
+): Promise<BranchSummaryData> {
   const where: any = { orgId: scope.orgId };
   if (scope.branchId) {
     where.branchId = scope.branchId;
@@ -224,25 +241,37 @@ async function getBranchSummaryData(scope: ReportScope): Promise<BranchSummaryDa
     },
   });
 
-  const presentCount = attendanceRecords.filter((r) => r.status === "present").length;
+  const presentCount = attendanceRecords.filter(
+    (r) => r.status === "present",
+  ).length;
   const attendanceRate =
     attendanceRecords.length > 0
       ? Math.round((presentCount / attendanceRecords.length) * 100)
       : 0;
 
-  // Get fee data
-  const fees = await prisma.studentFee.findMany({
+  // Get fee data from StudentFeeStructure and FeeInstallment
+  const feeStructures = await prisma.studentFeeStructure.findMany({
     where: {
       student: where,
     },
-    select: {
-      totalAmount: true,
-      paidAmount: true,
+    include: {
+      installments: {
+        select: {
+          amount: true,
+          paidAmount: true,
+        },
+      },
     },
   });
 
-  const totalFeesExpected = fees.reduce((sum, f) => sum + f.totalAmount, 0);
-  const totalFeesCollected = fees.reduce((sum, f) => sum + f.paidAmount, 0);
+  let totalFeesExpected = 0;
+  let totalFeesCollected = 0;
+  for (const structure of feeStructures) {
+    totalFeesExpected += structure.netAmount;
+    for (const installment of structure.installments) {
+      totalFeesCollected += installment.paidAmount;
+    }
+  }
   const totalFeesPending = totalFeesExpected - totalFeesCollected;
   const feeCollectionRate =
     totalFeesExpected > 0
@@ -273,29 +302,43 @@ async function getBranchSummaryData(scope: ReportScope): Promise<BranchSummaryDa
         },
       });
 
-      const batchPresent = batchAttendance.filter((r) => r.status === "present").length;
+      const batchPresent = batchAttendance.filter(
+        (r) => r.status === "present",
+      ).length;
       const batchAttendanceRate =
         batchAttendance.length > 0
           ? Math.round((batchPresent / batchAttendance.length) * 100)
           : 0;
 
-      // Get fees for this batch
-      const batchFees = await prisma.studentFee.findMany({
+      // Get fees for this batch from StudentFeeStructure and FeeInstallment
+      const batchFeeStructures = await prisma.studentFeeStructure.findMany({
         where: {
           student: {
             batchId: batch.id,
           },
         },
-        select: {
-          totalAmount: true,
-          paidAmount: true,
+        include: {
+          installments: {
+            select: {
+              amount: true,
+              paidAmount: true,
+            },
+          },
         },
       });
 
-      const batchTotalFees = batchFees.reduce((sum, f) => sum + f.totalAmount, 0);
-      const batchCollected = batchFees.reduce((sum, f) => sum + f.paidAmount, 0);
+      let batchTotalFees = 0;
+      let batchCollected = 0;
+      for (const structure of batchFeeStructures) {
+        batchTotalFees += structure.netAmount;
+        for (const installment of structure.installments) {
+          batchCollected += installment.paidAmount;
+        }
+      }
       const batchFeeRate =
-        batchTotalFees > 0 ? Math.round((batchCollected / batchTotalFees) * 100) : 0;
+        batchTotalFees > 0
+          ? Math.round((batchCollected / batchTotalFees) * 100)
+          : 0;
 
       return {
         batchName: batch.name,
@@ -303,7 +346,7 @@ async function getBranchSummaryData(scope: ReportScope): Promise<BranchSummaryDa
         attendanceRate: batchAttendanceRate,
         feeCollectionRate: batchFeeRate,
       };
-    })
+    }),
   );
 
   return {
@@ -325,7 +368,7 @@ async function getBranchSummaryData(scope: ReportScope): Promise<BranchSummaryDa
  */
 async function generateStudentPerformancePDF(
   data: StudentPerformanceData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50 });
@@ -349,7 +392,10 @@ async function generateStudentPerformancePDF(
     doc.text("Fee Status", cols[3], tableTop);
     doc.text("Pending", cols[4], tableTop);
 
-    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+    doc
+      .moveTo(50, tableTop + 15)
+      .lineTo(550, tableTop + 15)
+      .stroke();
 
     doc.font("Helvetica");
     let y = tableTop + 25;
@@ -362,7 +408,11 @@ async function generateStudentPerformancePDF(
 
       doc.text(student.name.substring(0, 20), cols[0], y);
       doc.text(`${student.attendancePercentage}%`, cols[1], y);
-      doc.text(student.examAverage !== null ? `${student.examAverage}%` : "N/A", cols[2], y);
+      doc.text(
+        student.examAverage !== null ? `${student.examAverage}%` : "N/A",
+        cols[2],
+        y,
+      );
       doc.text(student.feeStatus, cols[3], y);
       doc.text(formatCurrency(student.pendingFees), cols[4], y);
 
@@ -380,7 +430,7 @@ async function generateStudentPerformancePDF(
  */
 async function generateStudentPerformanceExcel(
   data: StudentPerformanceData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Student Performance");
@@ -430,7 +480,7 @@ async function generateStudentPerformanceExcel(
  */
 async function generateBranchSummaryPDF(
   data: BranchSummaryData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50 });
@@ -470,7 +520,10 @@ async function generateBranchSummaryPDF(
     doc.text("Attendance", cols[2], tableTop);
     doc.text("Fee Collection", cols[3], tableTop);
 
-    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+    doc
+      .moveTo(50, tableTop + 15)
+      .lineTo(550, tableTop + 15)
+      .stroke();
 
     doc.font("Helvetica");
     let y = tableTop + 25;
@@ -500,7 +553,7 @@ async function generateBranchSummaryPDF(
  */
 async function generateBranchSummaryExcel(
   data: BranchSummaryData,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Branch Summary");

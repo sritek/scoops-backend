@@ -4,7 +4,11 @@ import type { FastifyInstance } from "fastify";
 import { buildTestApp, getAuthHeaders } from "../helpers";
 import { USERS } from "../fixtures";
 import { prisma } from "../setup.js";
-import type { StudentResponse, BatchResponse, DashboardResponse } from "../types";
+import type {
+  StudentResponse,
+  BatchResponse,
+  DashboardResponse,
+} from "../types";
 
 describe("Happy Path Flows", () => {
   let app: FastifyInstance;
@@ -107,7 +111,8 @@ describe("Happy Path Flows", () => {
       });
 
       teacherBatchId = batch?.id ?? "";
-      teacherStudentIds = batch?.students.map((s: { id: string }) => s.id) ?? [];
+      teacherStudentIds =
+        batch?.students.map((s: { id: string }) => s.id) ?? [];
     });
 
     it("should mark attendance for assigned batch (201)", async () => {
@@ -198,41 +203,44 @@ describe("Happy Path Flows", () => {
   });
 
   // ============================================
-  // Accounts records payment
+  // Accounts records installment payment
   // ============================================
-  describe("Accounts records payment flow", () => {
-    let pendingFeeId: string;
+  describe("Accounts records installment payment flow", () => {
+    let pendingInstallmentId: string;
     let initialPaidAmount: number;
     let paymentAmount: number;
 
     beforeAll(async () => {
-      // Find a pending fee to pay
-      const fee = await prisma.studentFee.findFirst({
+      // Find a pending installment to pay
+      const installment = await prisma.feeInstallment.findFirst({
         where: {
-          status: "pending",
-          student: {
-            branch: {
-              name: "Main Branch",
+          status: {
+            in: ["upcoming", "due", "partial"],
+          },
+          studentFeeStructure: {
+            student: {
+              branch: {
+                name: "Main Branch",
+              },
             },
           },
         },
       });
 
-      pendingFeeId = fee?.id ?? "";
-      initialPaidAmount = fee?.paidAmount ?? 0;
+      pendingInstallmentId = installment?.id ?? "";
+      initialPaidAmount = installment?.paidAmount ?? 0;
       paymentAmount = 500; // Pay 500
     });
 
     it("should record a payment (201)", async () => {
-      if (!pendingFeeId) {
+      if (!pendingInstallmentId) {
         return;
       }
 
       const response = await request(app.server)
-        .post("/api/v1/fees/payment")
+        .post(`/api/v1/installments/${pendingInstallmentId}/payment`)
         .set(await getAuthHeaders(USERS.accounts.email))
         .send({
-          studentFeeId: pendingFeeId,
           amount: paymentAmount,
           paymentMode: "cash",
         });
@@ -241,20 +249,20 @@ describe("Happy Path Flows", () => {
     });
 
     it("should verify paid_amount updated in database", async () => {
-      if (!pendingFeeId) {
+      if (!pendingInstallmentId) {
         return;
       }
 
-      const fee = await prisma.studentFee.findUnique({
-        where: { id: pendingFeeId },
+      const installment = await prisma.feeInstallment.findUnique({
+        where: { id: pendingInstallmentId },
       });
 
-      expect(fee).not.toBeNull();
-      expect(fee?.paidAmount).toBe(initialPaidAmount + paymentAmount);
+      expect(installment).not.toBeNull();
+      expect(installment?.paidAmount).toBe(initialPaidAmount + paymentAmount);
     });
 
     it("should verify fee_paid event was created", async () => {
-      if (!pendingFeeId) {
+      if (!pendingInstallmentId) {
         return;
       }
 
@@ -263,7 +271,7 @@ describe("Happy Path Flows", () => {
         where: {
           type: "fee_paid",
           payload: {
-            contains: pendingFeeId,
+            contains: pendingInstallmentId,
           },
         },
       });
@@ -272,13 +280,13 @@ describe("Happy Path Flows", () => {
     });
 
     it("should verify payment record exists", async () => {
-      if (!pendingFeeId) {
+      if (!pendingInstallmentId) {
         return;
       }
 
-      const payment = await prisma.feePayment.findFirst({
+      const payment = await prisma.installmentPayment.findFirst({
         where: {
-          studentFeeId: pendingFeeId,
+          installmentId: pendingInstallmentId,
           amount: paymentAmount,
         },
       });
@@ -289,60 +297,46 @@ describe("Happy Path Flows", () => {
   });
 
   // ============================================
-  // Full fee payment flow
+  // Full installment payment flow
   // ============================================
-  describe("Full fee payment flow (status change)", () => {
-    let testFeeId: string;
+  describe("Full installment payment flow (status change)", () => {
+    let testInstallmentId: string;
     let totalAmount: number;
 
     beforeAll(async () => {
-      // Create a new fee for testing full payment
-      const student = await prisma.student.findFirst({
+      // Find an installment for testing full payment
+      const installment = await prisma.feeInstallment.findFirst({
         where: {
-          branch: {
-            name: "Main Branch",
+          status: {
+            in: ["upcoming", "due"],
+          },
+          paidAmount: 0,
+          studentFeeStructure: {
+            student: {
+              branch: {
+                name: "Main Branch",
+              },
+            },
           },
         },
       });
 
-      // Get branch ID first
-      const mainBranch = await prisma.branch.findFirst({
-        where: { name: "Main Branch" },
-      });
-
-      const feePlan = await prisma.feePlan.findFirst({
-        where: {
-          branchId: mainBranch?.id,
-        },
-      });
-
-      if (student && feePlan) {
-        const fee = await prisma.studentFee.create({
-          data: {
-            studentId: student.id,
-            feePlanId: feePlan.id,
-            totalAmount: 1000,
-            paidAmount: 0,
-            dueDate: new Date(),
-            status: "pending",
-          },
-        });
-        testFeeId = fee.id;
-        totalAmount = fee.totalAmount;
+      if (installment) {
+        testInstallmentId = installment.id;
+        totalAmount = installment.amount;
       }
     });
 
     it("should change status to paid when fully paid", async () => {
-      if (!testFeeId) {
+      if (!testInstallmentId) {
         return;
       }
 
       // Pay the full amount
       const response = await request(app.server)
-        .post("/api/v1/fees/payment")
+        .post(`/api/v1/installments/${testInstallmentId}/payment`)
         .set(await getAuthHeaders(USERS.accounts.email))
         .send({
-          studentFeeId: testFeeId,
           amount: totalAmount,
           paymentMode: "upi",
         });
@@ -350,12 +344,12 @@ describe("Happy Path Flows", () => {
       expect([201, 200]).toContain(response.status);
 
       // Verify status changed to paid
-      const fee = await prisma.studentFee.findUnique({
-        where: { id: testFeeId },
+      const installment = await prisma.feeInstallment.findUnique({
+        where: { id: testInstallmentId },
       });
 
-      expect(fee?.status).toBe("paid");
-      expect(fee?.paidAmount).toBe(totalAmount);
+      expect(installment?.status).toBe("paid");
+      expect(installment?.paidAmount).toBe(totalAmount);
     });
   });
 

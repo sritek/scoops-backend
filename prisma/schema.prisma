@@ -29,17 +29,6 @@ enum AttendanceStatus {
   absent
 }
 
-enum FeeStatus {
-  pending
-  partial
-  paid
-}
-
-enum FeeFrequency {
-  monthly
-  custom
-}
-
 enum PaymentMode {
   cash
   upi
@@ -285,7 +274,6 @@ model Organization {
   users            User[]
   students         Student[]
   parents          Parent[]
-  feePlans         FeePlan[]
   events           Event[]
   templates        MessageTemplate[]
   academicSessions AcademicSession[]
@@ -360,7 +348,6 @@ model User {
 
   classTeacherBatches Batch[]             @relation("ClassTeacher")
   attendanceSessions  AttendanceSession[]
-  payments            FeePayment[]
   periods             Period[]
   staffAttendance     StaffAttendance[]
   receiptsGenerated   Receipt[]           @relation("ReceiptReceivedBy")
@@ -415,7 +402,6 @@ model Student {
   batch             Batch?             @relation(fields: [batchId], references: [id])
   batchId           String?
   attendanceRecords AttendanceRecord[]
-  fees              StudentFee[]
   receipts          Receipt[]
   
   // Phase 2B Relations
@@ -675,56 +661,6 @@ model AttendanceRecord {
 }
 
 //////////////////////////
-// FEES & PAYMENTS
-//////////////////////////
-
-model FeePlan {
-  id        String       @id @default(uuid())
-  orgId     String
-  branchId  String
-  name      String
-  amount    Int
-  frequency FeeFrequency
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-
-  organization Organization @relation(fields: [orgId], references: [id])
-  studentFees  StudentFee[]
-}
-
-model StudentFee {
-  id          String    @id @default(uuid())
-  studentId   String
-  feePlanId   String
-  totalAmount Int
-  paidAmount  Int       @default(0)
-  dueDate     DateTime
-  status      FeeStatus @default(pending)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  student  Student      @relation(fields: [studentId], references: [id])
-  feePlan  FeePlan      @relation(fields: [feePlanId], references: [id])
-  payments FeePayment[]
-  
-  // Phase 2B Relations
-  paymentLinks PaymentLink[]
-}
-
-model FeePayment {
-  id           String      @id @default(uuid())
-  studentFeeId String
-  amount       Int
-  paymentMode  PaymentMode
-  receivedById String
-  receivedAt   DateTime    @default(now())
-
-  studentFee StudentFee @relation(fields: [studentFeeId], references: [id])
-  receivedBy User       @relation(fields: [receivedById], references: [id])
-  receipt    Receipt?
-}
-
-//////////////////////////
 // PHASE 3: FEE COMPONENTS & BATCH STRUCTURE
 //////////////////////////
 
@@ -923,6 +859,7 @@ model InstallmentPayment {
 
   installment FeeInstallment @relation(fields: [installmentId], references: [id])
   receivedBy  User           @relation("InstallmentReceivedBy", fields: [receivedById], references: [id])
+  receipt     Receipt?
 
   @@index([installmentId])
 }
@@ -1158,23 +1095,22 @@ model HomeworkSubmission {
 //////////////////////////
 
 model Receipt {
-  id            String      @id @default(uuid())
-  orgId         String
-  branchId      String
-  receiptNumber String      // Auto-generated: ORG-2026-00001
-  paymentId     String      @unique
-  studentId     String
-  studentFeeId  String
-  amount        Int
-  paymentMode   PaymentMode
-  receivedById  String
-  generatedAt   DateTime    @default(now())
-  pdfPath       String?     // S3/local path to generated PDF
+  id                   String      @id @default(uuid())
+  orgId                String
+  branchId             String
+  receiptNumber        String      // Auto-generated: ORG-2026-00001
+  installmentPaymentId String      @unique
+  studentId            String
+  amount               Int
+  paymentMode          PaymentMode
+  receivedById         String
+  generatedAt          DateTime    @default(now())
+  pdfPath              String?     // S3/local path to generated PDF
 
-  organization Organization @relation(fields: [orgId], references: [id])
-  payment      FeePayment   @relation(fields: [paymentId], references: [id])
-  student      Student      @relation(fields: [studentId], references: [id])
-  receivedBy   User         @relation("ReceiptReceivedBy", fields: [receivedById], references: [id])
+  organization       Organization       @relation(fields: [orgId], references: [id])
+  installmentPayment InstallmentPayment @relation(fields: [installmentPaymentId], references: [id])
+  student            Student            @relation(fields: [studentId], references: [id])
+  receivedBy         User               @relation("ReceiptReceivedBy", fields: [receivedById], references: [id])
 
   @@unique([orgId, receiptNumber])
   @@index([orgId, branchId])
@@ -1198,8 +1134,7 @@ model PaymentLink {
   id              String            @id @default(uuid())
   orgId           String
   branchId        String
-  studentFeeId    String?           // Legacy: old fee system
-  installmentId   String?           // New: Phase 3 installment system
+  installmentId   String?           // Reference to FeeInstallment
   shortCode       String            @unique // "abc123" for short URLs
   amount          Int
   description     String?
@@ -1211,12 +1146,10 @@ model PaymentLink {
   createdById     String
   createdAt       DateTime          @default(now())
 
-  studentFee  StudentFee?     @relation(fields: [studentFeeId], references: [id])
   installment FeeInstallment? @relation(fields: [installmentId], references: [id])
   createdBy   User            @relation("PaymentLinkCreatedBy", fields: [createdById], references: [id])
 
   @@index([shortCode])
-  @@index([studentFeeId])
   @@index([installmentId])
   @@index([orgId, status])
 }

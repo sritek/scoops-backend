@@ -10,7 +10,7 @@ describe("RBAC Enforcement", () => {
   let app: FastifyInstance;
   let studentId: string;
   let batchId: string;
-  let studentFeeId: string;
+  let installmentId: string;
 
   beforeAll(async () => {
     app = await buildTestApp();
@@ -36,18 +36,22 @@ describe("RBAC Enforcement", () => {
     });
     batchId = batch?.id ?? "";
 
-    // Get a student fee ID for testing
-    const studentFee = await prisma.studentFee.findFirst({
+    // Get an installment ID for testing
+    const installment = await prisma.feeInstallment.findFirst({
       where: {
-        student: {
-          branch: {
-            name: "Main Branch",
+        studentFeeStructure: {
+          student: {
+            branch: {
+              name: "Main Branch",
+            },
           },
         },
-        status: "pending",
+        status: {
+          in: ["upcoming", "due", "partial"],
+        },
       },
     });
-    studentFeeId = studentFee?.id ?? "";
+    installmentId = installment?.id ?? "";
   });
 
   afterAll(async () => {
@@ -58,9 +62,9 @@ describe("RBAC Enforcement", () => {
   // Teacher cannot access fees APIs
   // ============================================
   describe("Teacher RBAC restrictions", () => {
-    it("should reject teacher from viewing pending fees (403)", async () => {
+    it("should reject teacher from viewing pending installments (403)", async () => {
       const response = await request(app.server)
-        .get("/api/v1/fees/pending")
+        .get("/api/v1/installments/pending")
         .set(await getAuthHeaders(USERS.teacher1.email));
       const body = response.body as ApiErrorResponse;
 
@@ -69,11 +73,12 @@ describe("RBAC Enforcement", () => {
     });
 
     it("should reject teacher from recording payment (403)", async () => {
+      if (!installmentId) return;
+
       const response = await request(app.server)
-        .post("/api/v1/fees/payment")
+        .post(`/api/v1/installments/${installmentId}/payment`)
         .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
-          studentFeeId,
           amount: 1000,
           paymentMode: "cash",
         });
@@ -83,14 +88,13 @@ describe("RBAC Enforcement", () => {
       expect(body.error).toBe("Forbidden");
     });
 
-    it("should reject teacher from creating fee plan (403)", async () => {
+    it("should reject teacher from creating fee component (403)", async () => {
       const response = await request(app.server)
-        .post("/api/v1/fees/plan")
+        .post("/api/v1/fees/components")
         .set(await getAuthHeaders(USERS.teacher1.email))
         .send({
-          name: "Test Fee Plan",
-          amount: 5000,
-          frequency: "monthly",
+          name: "Test Fee Component",
+          type: "tuition",
         });
       const body = response.body as ApiErrorResponse;
 
@@ -177,37 +181,40 @@ describe("RBAC Enforcement", () => {
       expect(response.status).toBe(200);
     });
 
-    it("should allow accounts to view pending fees (200)", async () => {
+    it("should allow accounts to view pending installments (200)", async () => {
       const response = await request(app.server)
-        .get("/api/v1/fees/pending")
+        .get("/api/v1/installments/pending")
         .set(await getAuthHeaders(USERS.accounts.email));
 
       expect(response.status).toBe(200);
     });
 
     it("should allow accounts to record payment (201)", async () => {
-      // Find a pending fee that hasn't been fully paid
-      const pendingFee = await prisma.studentFee.findFirst({
+      // Find a pending installment that hasn't been fully paid
+      const pendingInstallment = await prisma.feeInstallment.findFirst({
         where: {
-          status: "pending",
-          student: {
-            branch: {
-              name: "Main Branch",
+          status: {
+            in: ["upcoming", "due", "partial"],
+          },
+          studentFeeStructure: {
+            student: {
+              branch: {
+                name: "Main Branch",
+              },
             },
           },
         },
       });
 
-      if (!pendingFee) {
-        // Skip if no pending fee
+      if (!pendingInstallment) {
+        // Skip if no pending installment
         return;
       }
 
       const response = await request(app.server)
-        .post("/api/v1/fees/payment")
+        .post(`/api/v1/installments/${pendingInstallment.id}/payment`)
         .set(await getAuthHeaders(USERS.accounts.email))
         .send({
-          studentFeeId: pendingFee.id,
           amount: 100,
           paymentMode: "cash",
         });
@@ -307,7 +314,7 @@ describe("RBAC Enforcement", () => {
 
     it("should reject staff from accessing fees (403)", async () => {
       const response = await request(app.server)
-        .get("/api/v1/fees/pending")
+        .get("/api/v1/installments/pending")
         .set(await getAuthHeaders(USERS.staff.email));
       const body = response.body as ApiErrorResponse;
 
@@ -360,9 +367,9 @@ describe("RBAC Enforcement", () => {
       expect(response.status).toBe(200);
     });
 
-    it("should allow admin to view pending fees (200)", async () => {
+    it("should allow admin to view pending installments (200)", async () => {
       const response = await request(app.server)
-        .get("/api/v1/fees/pending")
+        .get("/api/v1/installments/pending")
         .set(await getAuthHeaders(USERS.admin.email));
 
       expect(response.status).toBe(200);

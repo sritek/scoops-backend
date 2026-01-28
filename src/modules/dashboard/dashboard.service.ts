@@ -46,7 +46,9 @@ export async function getAttendanceSummary(scope: TenantScope) {
   }> = [];
 
   for (const session of sessions) {
-    const present = session.records.filter((r) => r.status === "present").length;
+    const present = session.records.filter(
+      (r) => r.status === "present",
+    ).length;
     const absent = session.records.filter((r) => r.status === "absent").length;
 
     totalPresent += present;
@@ -111,22 +113,25 @@ export async function getAttendanceSummary(scope: TenantScope) {
 
 /**
  * Get pending fees summary
+ * Uses FeeInstallment table from the consolidated fee system
  */
 export async function getPendingFeesSummary(scope: TenantScope) {
-  // Get all pending/partial fees
-  const pendingFees = await prisma.studentFee.findMany({
+  // Get all pending/partial/due/overdue installments
+  const pendingInstallments = await prisma.feeInstallment.findMany({
     where: {
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-        status: "active",
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+          branchId: scope.branchId,
+          status: "active",
+        },
       },
       status: {
-        in: ["pending", "partial"],
+        in: ["upcoming", "due", "overdue", "partial"],
       },
     },
     select: {
-      totalAmount: true,
+      amount: true,
       paidAmount: true,
       status: true,
       dueDate: true,
@@ -140,28 +145,32 @@ export async function getPendingFeesSummary(scope: TenantScope) {
   let overdueCount = 0;
   let overdueAmount = 0;
 
-  for (const fee of pendingFees) {
-    const pending = fee.totalAmount - fee.paidAmount;
+  for (const installment of pendingInstallments) {
+    const pending = installment.amount - installment.paidAmount;
     totalPendingAmount += pending;
 
-    if (fee.dueDate < today) {
+    if (installment.dueDate < today || installment.status === "overdue") {
       overdueCount++;
       overdueAmount += pending;
     }
   }
 
   return {
-    totalCount: pendingFees.length,
+    totalCount: pendingInstallments.length,
     totalPendingAmount,
     overdueCount,
     overdueAmount,
-    partialCount: pendingFees.filter((f) => f.status === "partial").length,
-    pendingCount: pendingFees.filter((f) => f.status === "pending").length,
+    partialCount: pendingInstallments.filter((f) => f.status === "partial")
+      .length,
+    pendingCount: pendingInstallments.filter(
+      (f) => f.status === "due" || f.status === "upcoming",
+    ).length,
   };
 }
 
 /**
  * Get fees collected today
+ * Uses InstallmentPayment table from the consolidated fee system
  */
 export async function getFeesCollectedToday(scope: TenantScope) {
   const today = new Date();
@@ -170,13 +179,15 @@ export async function getFeesCollectedToday(scope: TenantScope) {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // Get all payments received today
-  const payments = await prisma.feePayment.findMany({
+  // Get all installment payments received today
+  const payments = await prisma.installmentPayment.findMany({
     where: {
-      studentFee: {
-        student: {
-          orgId: scope.orgId,
-          branchId: scope.branchId,
+      installment: {
+        studentFeeStructure: {
+          student: {
+            orgId: scope.orgId,
+            branchId: scope.branchId,
+          },
         },
       },
       receivedAt: {
@@ -220,7 +231,7 @@ export async function getFeesCollectedToday(scope: TenantScope) {
  */
 export async function getTeacherAttendanceSummary(
   userId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -278,8 +289,10 @@ export async function getTeacherAttendanceSummary(
     },
   });
 
-  const present = session?.records.filter((r) => r.status === "present").length ?? 0;
-  const absent = session?.records.filter((r) => r.status === "absent").length ?? 0;
+  const present =
+    session?.records.filter((r) => r.status === "present").length ?? 0;
+  const absent =
+    session?.records.filter((r) => r.status === "absent").length ?? 0;
 
   const batchSummary = session
     ? [
@@ -322,10 +335,11 @@ export async function getTeacherAttendanceSummary(
 
 /**
  * Get pending fees summary for teacher's batch only
+ * Uses FeeInstallment table from the consolidated fee system
  */
 export async function getTeacherPendingFeesSummary(
   userId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   // Find the batch where user is class teacher
   const teacherBatch = await prisma.batch.findFirst({
@@ -351,21 +365,23 @@ export async function getTeacherPendingFeesSummary(
     };
   }
 
-  // Get pending fees for students in teacher's batch
-  const pendingFees = await prisma.studentFee.findMany({
+  // Get pending installments for students in teacher's batch
+  const pendingInstallments = await prisma.feeInstallment.findMany({
     where: {
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-        batchId: teacherBatch.id,
-        status: "active",
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+          branchId: scope.branchId,
+          batchId: teacherBatch.id,
+          status: "active",
+        },
       },
       status: {
-        in: ["pending", "partial"],
+        in: ["upcoming", "due", "overdue", "partial"],
       },
     },
     select: {
-      totalAmount: true,
+      amount: true,
       paidAmount: true,
       status: true,
       dueDate: true,
@@ -379,23 +395,26 @@ export async function getTeacherPendingFeesSummary(
   let overdueCount = 0;
   let overdueAmount = 0;
 
-  for (const fee of pendingFees) {
-    const pending = fee.totalAmount - fee.paidAmount;
+  for (const installment of pendingInstallments) {
+    const pending = installment.amount - installment.paidAmount;
     totalPendingAmount += pending;
 
-    if (fee.dueDate < today) {
+    if (installment.dueDate < today || installment.status === "overdue") {
       overdueCount++;
       overdueAmount += pending;
     }
   }
 
   return {
-    totalCount: pendingFees.length,
+    totalCount: pendingInstallments.length,
     totalPendingAmount,
     overdueCount,
     overdueAmount,
-    partialCount: pendingFees.filter((f) => f.status === "partial").length,
-    pendingCount: pendingFees.filter((f) => f.status === "pending").length,
+    partialCount: pendingInstallments.filter((f) => f.status === "partial")
+      .length,
+    pendingCount: pendingInstallments.filter(
+      (f) => f.status === "due" || f.status === "upcoming",
+    ).length,
   };
 }
 
@@ -462,7 +481,7 @@ export async function getDashboardSummary(scope: TenantScope) {
 export async function getRoleDashboardSummary(
   role: Role,
   userId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   switch (role) {
     case ROLES.TEACHER:
@@ -495,7 +514,9 @@ interface ActionItem {
 /**
  * Get action items for admin dashboard
  */
-export async function getAdminActionItems(scope: TenantScope): Promise<ActionItem[]> {
+export async function getAdminActionItems(
+  scope: TenantScope,
+): Promise<ActionItem[]> {
   const actionItems: ActionItem[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -528,27 +549,29 @@ export async function getAdminActionItems(scope: TenantScope): Promise<ActionIte
     });
   }
 
-  // Check for overdue fees
-  const overdueFeesCount = await prisma.studentFee.count({
+  // Check for overdue fees (using FeeInstallment)
+  const overdueInstallmentsCount = await prisma.feeInstallment.count({
     where: {
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-        status: "active",
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+          branchId: scope.branchId,
+          status: "active",
+        },
       },
-      status: { in: ["pending", "partial"] },
+      status: { in: ["overdue", "partial"] },
       dueDate: { lt: today },
     },
   });
 
-  if (overdueFeesCount > 0) {
+  if (overdueInstallmentsCount > 0) {
     actionItems.push({
       type: "fees_overdue",
       priority: "high",
       title: "Overdue Fees",
-      description: `${overdueFeesCount} student(s) have overdue fees`,
+      description: `${overdueInstallmentsCount} installment(s) are overdue`,
       actionUrl: "/fees?status=overdue",
-      count: overdueFeesCount,
+      count: overdueInstallmentsCount,
     });
   }
 
@@ -580,7 +603,7 @@ export async function getAdminActionItems(scope: TenantScope): Promise<ActionIte
   // Check for today's birthdays
   const todayMonth = today.getMonth() + 1;
   const todayDay = today.getDate();
-  
+
   const birthdaysToday = await prisma.student.count({
     where: {
       orgId: scope.orgId,
@@ -592,8 +615,12 @@ export async function getAdminActionItems(scope: TenantScope): Promise<ActionIte
       AND: [
         {
           dob: {
-            gte: new Date(`2000-${String(todayMonth).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`),
-            lt: new Date(`2000-${String(todayMonth).padStart(2, "0")}-${String(todayDay + 1).padStart(2, "0")}`),
+            gte: new Date(
+              `2000-${String(todayMonth).padStart(2, "0")}-${String(todayDay).padStart(2, "0")}`,
+            ),
+            lt: new Date(
+              `2000-${String(todayMonth).padStart(2, "0")}-${String(todayDay + 1).padStart(2, "0")}`,
+            ),
           },
         },
       ],
@@ -617,7 +644,12 @@ export async function getAdminActionItems(scope: TenantScope): Promise<ActionIte
  * Get attendance trend for last 7 days
  */
 export async function getAttendanceTrend(scope: TenantScope, days: number = 7) {
-  const trends: Array<{ date: string; present: number; absent: number; percentage: number }> = [];
+  const trends: Array<{
+    date: string;
+    present: number;
+    absent: number;
+    percentage: number;
+  }> = [];
 
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date();
@@ -660,8 +692,12 @@ export async function getAttendanceTrend(scope: TenantScope, days: number = 7) {
 
 /**
  * Get fee collection trend for last 7 days
+ * Uses InstallmentPayment table from the consolidated fee system
  */
-export async function getFeeCollectionTrend(scope: TenantScope, days: number = 7) {
+export async function getFeeCollectionTrend(
+  scope: TenantScope,
+  days: number = 7,
+) {
   const trends: Array<{ date: string; amount: number; count: number }> = [];
 
   for (let i = days - 1; i >= 0; i--) {
@@ -672,12 +708,14 @@ export async function getFeeCollectionTrend(scope: TenantScope, days: number = 7
     const nextDate = new Date(date);
     nextDate.setDate(nextDate.getDate() + 1);
 
-    const payments = await prisma.feePayment.aggregate({
+    const payments = await prisma.installmentPayment.aggregate({
       where: {
-        studentFee: {
-          student: {
-            orgId: scope.orgId,
-            branchId: scope.branchId,
+        installment: {
+          studentFeeStructure: {
+            student: {
+              orgId: scope.orgId,
+              branchId: scope.branchId,
+            },
           },
         },
         receivedAt: {
@@ -704,7 +742,10 @@ export async function getFeeCollectionTrend(scope: TenantScope, days: number = 7
 /**
  * Get upcoming birthdays
  */
-export async function getUpcomingBirthdays(scope: TenantScope, days: number = 7) {
+export async function getUpcomingBirthdays(
+  scope: TenantScope,
+  days: number = 7,
+) {
   const today = new Date();
   const birthdayStudents: Array<{
     id: string;
@@ -748,7 +789,7 @@ export async function getUpcomingBirthdays(scope: TenantScope, days: number = 7)
       if (student.dob) {
         const dobMonth = student.dob.getMonth() + 1;
         const dobDay = student.dob.getDate();
-        
+
         if (dobMonth === month && dobDay === day) {
           birthdayStudents.push({
             id: student.id,
@@ -865,7 +906,10 @@ export async function getEnhancedAdminDashboard(scope: TenantScope) {
 /**
  * Get enhanced teacher dashboard
  */
-export async function getEnhancedTeacherDashboard(userId: string, scope: TenantScope) {
+export async function getEnhancedTeacherDashboard(
+  userId: string,
+  scope: TenantScope,
+) {
   const [teacherDashboard, upcomingBirthdays] = await Promise.all([
     getTeacherDashboard(userId, scope),
     getUpcomingBirthdays(scope, 7),
@@ -925,15 +969,16 @@ export async function getEnhancedTeacherDashboard(userId: string, scope: TenantS
  * Get enhanced accounts dashboard
  */
 export async function getEnhancedAccountsDashboard(scope: TenantScope) {
-  const [accountsDashboard, feeCollectionTrend, actionItems] = await Promise.all([
-    getAccountsDashboard(scope),
-    getFeeCollectionTrend(scope, 7),
-    getAdminActionItems(scope), // Reuse but filter
-  ]);
+  const [accountsDashboard, feeCollectionTrend, actionItems] =
+    await Promise.all([
+      getAccountsDashboard(scope),
+      getFeeCollectionTrend(scope, 7),
+      getAdminActionItems(scope), // Reuse but filter
+    ]);
 
   // Filter action items to only fee-related ones
   const feeActionItems = actionItems.filter(
-    (item) => item.type === "fees_overdue"
+    (item) => item.type === "fees_overdue",
   );
 
   return {
@@ -951,7 +996,7 @@ export async function getEnhancedAccountsDashboard(scope: TenantScope) {
 export async function getEnhancedDashboard(
   role: Role,
   userId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   switch (role) {
     case ROLES.TEACHER:

@@ -95,12 +95,12 @@ export async function generateReceiptNumber(orgId: string): Promise<string> {
 }
 
 /**
- * Create a receipt for a payment
+ * Create a receipt for an installment payment
  */
 export async function createReceipt(
-  paymentId: string,
+  installmentPaymentId: string,
   scope: TenantScope,
-  receivedById: string
+  receivedById: string,
 ): Promise<{
   id: string;
   receiptNumber: string;
@@ -108,24 +108,22 @@ export async function createReceipt(
   paymentMode: string;
   generatedAt: Date;
   studentName: string;
-  feePlanName: string;
+  installmentNumber: number;
 }> {
-  // Get payment with related data
-  const payment = await prisma.feePayment.findFirst({
+  // Get installment payment with related data
+  const payment = await prisma.installmentPayment.findFirst({
     where: {
-      id: paymentId,
-      studentFee: {
-        student: {
-          orgId: scope.orgId,
-          branchId: scope.branchId,
-        },
-      },
+      id: installmentPaymentId,
     },
     include: {
-      studentFee: {
+      installment: {
         include: {
-          student: true,
-          feePlan: true,
+          studentFeeStructure: {
+            include: {
+              student: true,
+              session: true,
+            },
+          },
         },
       },
     },
@@ -135,9 +133,15 @@ export async function createReceipt(
     throw new NotFoundError("Payment");
   }
 
+  // Verify tenant scope
+  const student = payment.installment.studentFeeStructure.student;
+  if (student.orgId !== scope.orgId || student.branchId !== scope.branchId) {
+    throw new NotFoundError("Payment");
+  }
+
   // Check if receipt already exists for this payment
   const existingReceipt = await prisma.receipt.findUnique({
-    where: { paymentId },
+    where: { installmentPaymentId },
   });
 
   if (existingReceipt) {
@@ -147,11 +151,8 @@ export async function createReceipt(
       amount: existingReceipt.amount,
       paymentMode: existingReceipt.paymentMode,
       generatedAt: existingReceipt.generatedAt,
-      studentName: formatFullName(
-        payment.studentFee.student.firstName,
-        payment.studentFee.student.lastName
-      ),
-      feePlanName: payment.studentFee.feePlan.name,
+      studentName: formatFullName(student.firstName, student.lastName),
+      installmentNumber: payment.installment.installmentNumber,
     };
   }
 
@@ -164,9 +165,8 @@ export async function createReceipt(
       orgId: scope.orgId,
       branchId: scope.branchId,
       receiptNumber,
-      paymentId,
-      studentId: payment.studentFee.student.id,
-      studentFeeId: payment.studentFee.id,
+      installmentPaymentId,
+      studentId: student.id,
       amount: payment.amount,
       paymentMode: payment.paymentMode,
       receivedById,
@@ -179,11 +179,8 @@ export async function createReceipt(
     amount: receipt.amount,
     paymentMode: receipt.paymentMode,
     generatedAt: receipt.generatedAt,
-    studentName: formatFullName(
-      payment.studentFee.student.firstName,
-      payment.studentFee.student.lastName
-    ),
-    feePlanName: payment.studentFee.feePlan.name,
+    studentName: formatFullName(student.firstName, student.lastName),
+    installmentNumber: payment.installment.installmentNumber,
   };
 }
 
@@ -200,7 +197,7 @@ export interface ReceiptFilters {
 export async function getReceipts(
   scope: TenantScope,
   pagination: PaginationParams,
-  filters?: ReceiptFilters
+  filters?: ReceiptFilters,
 ) {
   const where: Prisma.ReceiptWhereInput = {
     orgId: scope.orgId,
@@ -226,8 +223,16 @@ export async function getReceipts(
   if (filters?.search) {
     where.OR = [
       { receiptNumber: { contains: filters.search, mode: "insensitive" } },
-      { student: { firstName: { contains: filters.search, mode: "insensitive" } } },
-      { student: { lastName: { contains: filters.search, mode: "insensitive" } } },
+      {
+        student: {
+          firstName: { contains: filters.search, mode: "insensitive" },
+        },
+      },
+      {
+        student: {
+          lastName: { contains: filters.search, mode: "insensitive" },
+        },
+      },
     ];
   }
 
@@ -242,14 +247,18 @@ export async function getReceipts(
             lastName: true,
           },
         },
-        payment: {
+        installmentPayment: {
           include: {
-            studentFee: {
+            installment: {
               include: {
-                feePlan: {
-                  select: {
-                    id: true,
-                    name: true,
+                studentFeeStructure: {
+                  include: {
+                    session: {
+                      select: {
+                        id: true,
+                        name: true,
+                      },
+                    },
                   },
                 },
               },
@@ -281,14 +290,27 @@ export async function getReceipts(
       id: receipt.student.id,
       firstName: receipt.student.firstName,
       lastName: receipt.student.lastName,
-      fullName: formatFullName(receipt.student.firstName, receipt.student.lastName),
+      fullName: formatFullName(
+        receipt.student.firstName,
+        receipt.student.lastName,
+      ),
     },
-    feePlan: receipt.payment.studentFee.feePlan,
+    installment: {
+      id: receipt.installmentPayment.installment.id,
+      installmentNumber:
+        receipt.installmentPayment.installment.installmentNumber,
+      dueDate: receipt.installmentPayment.installment.dueDate,
+      amount: receipt.installmentPayment.installment.amount,
+    },
+    session: receipt.installmentPayment.installment.studentFeeStructure.session,
     receivedBy: {
       id: receipt.receivedBy.id,
       firstName: receipt.receivedBy.firstName,
       lastName: receipt.receivedBy.lastName,
-      fullName: formatFullName(receipt.receivedBy.firstName, receipt.receivedBy.lastName),
+      fullName: formatFullName(
+        receipt.receivedBy.firstName,
+        receipt.receivedBy.lastName,
+      ),
     },
   }));
 
@@ -325,11 +347,20 @@ export async function getReceiptById(id: string, scope: TenantScope) {
           },
         },
       },
-      payment: {
+      installmentPayment: {
         include: {
-          studentFee: {
+          installment: {
             include: {
-              feePlan: true,
+              studentFeeStructure: {
+                include: {
+                  session: true,
+                  lineItems: {
+                    include: {
+                      feeComponent: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -348,6 +379,9 @@ export async function getReceiptById(id: string, scope: TenantScope) {
     return null;
   }
 
+  const installment = receipt.installmentPayment.installment;
+  const feeStructure = installment.studentFeeStructure;
+
   return {
     id: receipt.id,
     receiptNumber: receipt.receiptNumber,
@@ -359,21 +393,46 @@ export async function getReceiptById(id: string, scope: TenantScope) {
       id: receipt.student.id,
       firstName: receipt.student.firstName,
       lastName: receipt.student.lastName,
-      fullName: formatFullName(receipt.student.firstName, receipt.student.lastName),
+      fullName: formatFullName(
+        receipt.student.firstName,
+        receipt.student.lastName,
+      ),
       batch: receipt.student.batch,
     },
-    feePlan: receipt.payment.studentFee.feePlan,
-    studentFee: {
-      totalAmount: receipt.payment.studentFee.totalAmount,
-      paidAmount: receipt.payment.studentFee.paidAmount,
-      dueDate: receipt.payment.studentFee.dueDate,
-      status: receipt.payment.studentFee.status,
+    session: feeStructure.session,
+    feeStructure: {
+      id: feeStructure.id,
+      grossAmount: feeStructure.grossAmount,
+      scholarshipAmount: feeStructure.scholarshipAmount,
+      netAmount: feeStructure.netAmount,
+      lineItems: feeStructure.lineItems.map((item) => ({
+        id: item.id,
+        feeComponent: {
+          id: item.feeComponent.id,
+          name: item.feeComponent.name,
+          type: item.feeComponent.type,
+        },
+        originalAmount: item.originalAmount,
+        adjustedAmount: item.adjustedAmount,
+        waived: item.waived,
+      })),
+    },
+    installment: {
+      id: installment.id,
+      installmentNumber: installment.installmentNumber,
+      amount: installment.amount,
+      dueDate: installment.dueDate,
+      paidAmount: installment.paidAmount,
+      status: installment.status,
     },
     receivedBy: {
       id: receipt.receivedBy.id,
       firstName: receipt.receivedBy.firstName,
       lastName: receipt.receivedBy.lastName,
-      fullName: formatFullName(receipt.receivedBy.firstName, receipt.receivedBy.lastName),
+      fullName: formatFullName(
+        receipt.receivedBy.firstName,
+        receipt.receivedBy.lastName,
+      ),
     },
   };
 }
@@ -384,7 +443,7 @@ export async function getReceiptById(id: string, scope: TenantScope) {
  */
 export async function generateReceiptPDF(
   id: string,
-  scope: TenantScope
+  scope: TenantScope,
 ): Promise<{ stream: Readable; fileName: string } | null> {
   const receipt = await getReceiptById(id, scope);
 
@@ -416,29 +475,26 @@ export async function generateReceiptPDF(
 
   // Organization contact
   const contactParts: string[] = [];
-  if (receipt.organization.address) contactParts.push(receipt.organization.address);
-  if (receipt.organization.phone) contactParts.push(`Phone: ${receipt.organization.phone}`);
-  if (receipt.organization.email) contactParts.push(`Email: ${receipt.organization.email}`);
+  if (receipt.organization.address)
+    contactParts.push(receipt.organization.address);
+  if (receipt.organization.phone)
+    contactParts.push(`Phone: ${receipt.organization.phone}`);
+  if (receipt.organization.email)
+    contactParts.push(`Email: ${receipt.organization.email}`);
 
   if (contactParts.length > 0) {
-    doc
-      .fontSize(9)
-      .font("Helvetica")
-      .text(contactParts.join(" | "), 50, 75, {
-        align: "center",
-        width: pageWidth,
-      });
+    doc.fontSize(9).font("Helvetica").text(contactParts.join(" | "), 50, 75, {
+      align: "center",
+      width: pageWidth,
+    });
   }
 
   // Receipt Title
   doc.moveDown(1.5);
-  doc
-    .fontSize(16)
-    .font("Helvetica-Bold")
-    .text("PAYMENT RECEIPT", 50, doc.y, {
-      align: "center",
-      width: pageWidth,
-    });
+  doc.fontSize(16).font("Helvetica-Bold").text("PAYMENT RECEIPT", 50, doc.y, {
+    align: "center",
+    width: pageWidth,
+  });
 
   // Horizontal line
   doc.moveDown(0.5);
@@ -462,14 +518,25 @@ export async function generateReceiptPDF(
   doc.font("Helvetica-Bold").text("Date:", 380, detailsY);
   doc.font("Helvetica").text(formatDate(receipt.generatedAt), 420, detailsY);
 
+  // Session info
+  doc.moveDown(0.5);
+  doc.font("Helvetica-Bold").text("Session:", 50, doc.y);
+  doc.font("Helvetica").text(receipt.session.name, 130, doc.y - 12);
+
   // Student details box
-  doc.moveDown(2);
+  doc.moveDown(1.5);
   const boxTop = doc.y;
   doc.rect(50, boxTop, 495, 70).stroke("#cccccc");
 
-  doc.fontSize(10).font("Helvetica-Bold").text("Student Details", 60, boxTop + 10);
+  doc
+    .fontSize(10)
+    .font("Helvetica-Bold")
+    .text("Student Details", 60, boxTop + 10);
 
-  doc.fontSize(10).font("Helvetica-Bold").text("Name:", 60, boxTop + 30);
+  doc
+    .fontSize(10)
+    .font("Helvetica-Bold")
+    .text("Name:", 60, boxTop + 30);
   doc.font("Helvetica").text(receipt.student.fullName, 130, boxTop + 30);
 
   if (receipt.student.batch) {
@@ -478,42 +545,46 @@ export async function generateReceiptPDF(
   }
 
   doc.font("Helvetica-Bold").text("Student ID:", 60, boxTop + 50);
-  doc.font("Helvetica").text(receipt.student.id.substring(0, 8).toUpperCase(), 130, boxTop + 50);
+  doc
+    .font("Helvetica")
+    .text(receipt.student.id.substring(0, 8).toUpperCase(), 130, boxTop + 50);
 
   // Payment details box
   doc.y = boxTop + 90;
   const paymentBoxTop = doc.y;
   doc.rect(50, paymentBoxTop, 495, 120).stroke("#cccccc");
 
-  doc.fontSize(10).font("Helvetica-Bold").text("Payment Details", 60, paymentBoxTop + 10);
+  doc
+    .fontSize(10)
+    .font("Helvetica-Bold")
+    .text("Payment Details", 60, paymentBoxTop + 10);
 
   // Table header
   const tableTop = paymentBoxTop + 35;
-  doc
-    .rect(60, tableTop, 475, 25)
-    .fill("#f5f5f5")
-    .stroke("#cccccc");
+  doc.rect(60, tableTop, 475, 25).fill("#f5f5f5").stroke("#cccccc");
 
   doc.fontSize(9).font("Helvetica-Bold").fillColor("#333333");
-  doc.text("Fee Type", 70, tableTop + 8);
+  doc.text("Installment", 70, tableTop + 8);
   doc.text("Due Date", 220, tableTop + 8);
   doc.text("Amount", 340, tableTop + 8);
   doc.text("Status", 450, tableTop + 8);
 
   // Table row
   const rowTop = tableTop + 25;
-  doc
-    .rect(60, rowTop, 475, 25)
-    .stroke("#cccccc");
+  doc.rect(60, rowTop, 475, 25).stroke("#cccccc");
 
   doc.fontSize(9).font("Helvetica").fillColor("#000000");
-  doc.text(receipt.feePlan.name, 70, rowTop + 8);
-  doc.text(formatDate(receipt.studentFee.dueDate), 220, rowTop + 8);
+  doc.text(
+    `Installment ${receipt.installment.installmentNumber}`,
+    70,
+    rowTop + 8,
+  );
+  doc.text(formatDate(receipt.installment.dueDate), 220, rowTop + 8);
   doc.text(formatCurrency(receipt.amount), 340, rowTop + 8);
   doc
     .font("Helvetica-Bold")
-    .fillColor(receipt.studentFee.status === "paid" ? "#22c55e" : "#f59e0b")
-    .text(receipt.studentFee.status.toUpperCase(), 450, rowTop + 8);
+    .fillColor(receipt.installment.status === "paid" ? "#22c55e" : "#f59e0b")
+    .text(receipt.installment.status.toUpperCase(), 450, rowTop + 8);
 
   // Payment summary
   doc.y = paymentBoxTop + 140;
@@ -523,12 +594,20 @@ export async function generateReceiptPDF(
 
   doc.fontSize(10).font("Helvetica").fillColor("#000000");
   doc.text("Payment Mode:", 330, summaryTop + 10);
-  doc.font("Helvetica-Bold").text(formatPaymentMode(receipt.paymentMode), 440, summaryTop + 10);
+  doc
+    .font("Helvetica-Bold")
+    .text(formatPaymentMode(receipt.paymentMode), 440, summaryTop + 10);
 
   doc.font("Helvetica").text("Amount Paid:", 330, summaryTop + 30);
-  doc.font("Helvetica-Bold").fontSize(14).text(formatCurrency(receipt.amount), 440, summaryTop + 28);
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(14)
+    .text(formatCurrency(receipt.amount), 440, summaryTop + 28);
 
-  doc.fontSize(10).font("Helvetica").text("Received By:", 330, summaryTop + 52);
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .text("Received By:", 330, summaryTop + 52);
   doc.font("Helvetica").text(receipt.receivedBy.fullName, 410, summaryTop + 52);
 
   // Footer
@@ -545,10 +624,15 @@ export async function generateReceiptPDF(
     .fontSize(8)
     .font("Helvetica")
     .fillColor("#666666")
-    .text("This is a computer-generated receipt and does not require a signature.", 50, doc.y, {
-      align: "center",
-      width: pageWidth,
-    });
+    .text(
+      "This is a computer-generated receipt and does not require a signature.",
+      50,
+      doc.y,
+      {
+        align: "center",
+        width: pageWidth,
+      },
+    );
 
   doc.moveDown(0.5);
   doc.text(`Generated on: ${formatDate(new Date())}`, 50, doc.y, {

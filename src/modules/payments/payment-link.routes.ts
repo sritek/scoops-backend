@@ -14,7 +14,7 @@ import * as controller from "./payment-link.controller.js";
 export async function paymentLinkRoutes(app: FastifyInstance) {
   /**
    * POST /payment-links
-   * Create a new payment link
+   * Create a new payment link for a fee installment
    */
   app.post(
     "/",
@@ -22,13 +22,13 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Payment Links"],
         summary: "Create payment link",
-        description: "Generate a new payment link for a student fee",
+        description: "Generate a new payment link for a fee installment",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
-          required: ["studentFeeId"],
+          required: ["installmentId"],
           properties: {
-            studentFeeId: { type: "string", format: "uuid" },
+            installmentId: { type: "string", format: "uuid" },
             expiresInDays: { type: "number", minimum: 1, maximum: 30 },
             description: { type: "string", maxLength: 500 },
           },
@@ -57,7 +57,7 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.FEE_UPDATE),
       ],
     },
-    controller.createPaymentLink
+    controller.createPaymentLink,
   );
 
   /**
@@ -77,7 +77,10 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
           properties: {
             page: { type: "number" },
             limit: { type: "number" },
-            status: { type: "string", enum: ["active", "expired", "paid", "cancelled"] },
+            status: {
+              type: "string",
+              enum: ["active", "expired", "paid", "cancelled"],
+            },
             studentId: { type: "string", format: "uuid" },
             search: { type: "string" },
           },
@@ -88,7 +91,7 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.FEE_VIEW),
       ],
     },
-    controller.listPaymentLinks
+    controller.listPaymentLinks,
   );
 
   /**
@@ -116,7 +119,7 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.FEE_VIEW),
       ],
     },
-    controller.getPaymentLink
+    controller.getPaymentLink,
   );
 
   /**
@@ -144,7 +147,7 @@ export async function paymentLinkRoutes(app: FastifyInstance) {
         requirePermission(PERMISSIONS.FEE_UPDATE),
       ],
     },
-    controller.cancelPaymentLink
+    controller.cancelPaymentLink,
   );
 }
 
@@ -191,7 +194,8 @@ export async function publicPaymentRoutes(app: FastifyInstance) {
                       batchName: { type: "string" },
                     },
                   },
-                  feePlan: { type: "string" },
+                  session: { type: "string" },
+                  installmentNumber: { type: "number" },
                   organization: {
                     type: "object",
                     properties: {
@@ -206,6 +210,6 @@ export async function publicPaymentRoutes(app: FastifyInstance) {
         },
       },
     },
-    controller.getPublicPaymentLink
+    controller.getPublicPaymentLink,
   );
 }

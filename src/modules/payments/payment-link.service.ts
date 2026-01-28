@@ -2,6 +2,7 @@
  * Payment Link Service
  *
  * Handles creation, management, and verification of payment links
+ * Updated to work with FeeInstallment instead of legacy StudentFee
  */
 
 import { prisma } from "../../config/database.js";
@@ -34,10 +35,10 @@ function formatFullName(firstName: string, lastName: string): string {
 }
 
 /**
- * Create payment link input
+ * Create payment link input - now uses installmentId
  */
 export interface CreatePaymentLinkInput {
-  studentFeeId: string;
+  installmentId: string;
   expiresInDays?: number; // Default: 7 days
   description?: string;
 }
@@ -52,63 +53,74 @@ export interface PaymentLinkFilters {
 }
 
 /**
- * Create a new payment link for a student fee
+ * Create a new payment link for a fee installment
  */
 export async function createPaymentLink(
   input: CreatePaymentLinkInput,
   userId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
-  // Get the student fee with student and parent info
-  const studentFee = await prisma.studentFee.findFirst({
+  // Get the installment with student and parent info
+  const installment = await prisma.feeInstallment.findFirst({
     where: {
-      id: input.studentFeeId,
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
+      id: input.installmentId,
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+          branchId: scope.branchId,
+        },
       },
     },
     include: {
-      student: {
+      studentFeeStructure: {
         include: {
-          studentParents: {
+          student: {
             include: {
-              parent: {
+              studentParents: {
+                include: {
+                  parent: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                      phone: true,
+                      email: true,
+                    },
+                  },
+                },
+                take: 1,
+              },
+              batch: {
                 select: {
-                  firstName: true,
-                  lastName: true,
-                  phone: true,
-                  email: true,
+                  name: true,
                 },
               },
             },
-            take: 1,
           },
-        },
-      },
-      feePlan: {
-        select: {
-          name: true,
+          session: {
+            select: {
+              name: true,
+            },
+          },
         },
       },
     },
   });
 
-  if (!studentFee) {
-    throw new NotFoundError("Student fee");
+  if (!installment) {
+    throw new NotFoundError("Fee installment");
   }
 
   // Calculate pending amount
-  const pendingAmount = studentFee.totalAmount - studentFee.paidAmount;
+  const pendingAmount = installment.amount - installment.paidAmount;
 
   if (pendingAmount <= 0) {
-    throw new BadRequestError("Fee is already fully paid");
+    throw new BadRequestError("Installment is already fully paid");
   }
 
-  // Check if there's an existing active link
+  // Check if there's an existing active link for this installment
   const existingLink = await prisma.paymentLink.findFirst({
     where: {
-      studentFeeId: studentFee.id,
+      installmentId: installment.id,
       status: "active",
       expiresAt: {
         gt: new Date(),
@@ -130,11 +142,9 @@ export async function createPaymentLink(
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
 
   // Get parent info for Razorpay
-  const parent = studentFee.student.studentParents[0]?.parent;
-  const studentName = formatFullName(
-    studentFee.student.firstName,
-    studentFee.student.lastName
-  );
+  const student = installment.studentFeeStructure.student;
+  const parent = student.studentParents[0]?.parent;
+  const studentName = formatFullName(student.firstName, student.lastName);
   const parentName = parent
     ? formatFullName(parent.firstName, parent.lastName)
     : studentName;
@@ -142,9 +152,10 @@ export async function createPaymentLink(
   const parentEmail = parent?.email || undefined;
 
   // Description for payment
+  const sessionName = installment.studentFeeStructure.session.name;
   const description =
     input.description ||
-    `Fee payment for ${studentName} - ${studentFee.feePlan.name}`;
+    `Fee payment for ${studentName} - Installment ${installment.installmentNumber} (${sessionName})`;
 
   // Create Razorpay payment link (or stub)
   let razorpayLinkId: string | null = null;
@@ -178,7 +189,7 @@ export async function createPaymentLink(
     data: {
       orgId: scope.orgId,
       branchId: scope.branchId,
-      studentFeeId: studentFee.id,
+      installmentId: installment.id,
       shortCode,
       amount: pendingAmount,
       description,
@@ -189,18 +200,22 @@ export async function createPaymentLink(
       createdById: userId,
     },
     include: {
-      studentFee: {
+      installment: {
         include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          feePlan: {
-            select: {
-              name: true,
+          studentFeeStructure: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              session: {
+                select: {
+                  name: true,
+                },
+              },
             },
           },
         },
@@ -212,7 +227,8 @@ export async function createPaymentLink(
     ...paymentLink,
     paymentUrl: razorpayUrl || `${env.APP_BASE_URL}/pay/${shortCode}`,
     studentName,
-    feePlanName: studentFee.feePlan.name,
+    sessionName,
+    installmentNumber: installment.installmentNumber,
   };
 }
 
@@ -223,23 +239,27 @@ export async function getPaymentLinkByShortCode(shortCode: string) {
   const paymentLink = await prisma.paymentLink.findUnique({
     where: { shortCode },
     include: {
-      studentFee: {
+      installment: {
         include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              batch: {
+          studentFeeStructure: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  batch: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+              session: {
                 select: {
                   name: true,
                 },
               },
-            },
-          },
-          feePlan: {
-            select: {
-              name: true,
             },
           },
         },
@@ -268,16 +288,18 @@ export async function getPaymentLinkByShortCode(shortCode: string) {
     status: paymentLink.status,
     expiresAt: paymentLink.expiresAt,
     razorpayUrl: paymentLink.razorpayUrl,
-    student: paymentLink.studentFee
+    student: paymentLink.installment
       ? {
           name: formatFullName(
-            paymentLink.studentFee.student.firstName,
-            paymentLink.studentFee.student.lastName
+            paymentLink.installment.studentFeeStructure.student.firstName,
+            paymentLink.installment.studentFeeStructure.student.lastName,
           ),
-          batchName: paymentLink.studentFee.student.batch?.name,
+          batchName:
+            paymentLink.installment.studentFeeStructure.student.batch?.name,
         }
       : null,
-    feePlan: paymentLink.studentFee?.feePlan?.name ?? null,
+    session: paymentLink.installment?.studentFeeStructure.session?.name ?? null,
+    installmentNumber: paymentLink.installment?.installmentNumber ?? null,
     organization: org,
   };
 }
@@ -288,7 +310,7 @@ export async function getPaymentLinkByShortCode(shortCode: string) {
 export async function getPaymentLinks(
   scope: TenantScope,
   pagination: PaginationParams,
-  filters?: PaymentLinkFilters
+  filters?: PaymentLinkFilters,
 ) {
   const where: any = {
     orgId: scope.orgId,
@@ -300,8 +322,10 @@ export async function getPaymentLinks(
   }
 
   if (filters?.studentId) {
-    where.studentFee = {
-      studentId: filters.studentId,
+    where.installment = {
+      studentFeeStructure: {
+        studentId: filters.studentId,
+      },
     };
   }
 
@@ -309,12 +333,16 @@ export async function getPaymentLinks(
     where.OR = [
       { shortCode: { contains: filters.search, mode: "insensitive" } },
       {
-        studentFee: {
-          student: {
-            OR: [
-              { firstName: { contains: filters.search, mode: "insensitive" } },
-              { lastName: { contains: filters.search, mode: "insensitive" } },
-            ],
+        installment: {
+          studentFeeStructure: {
+            student: {
+              OR: [
+                {
+                  firstName: { contains: filters.search, mode: "insensitive" },
+                },
+                { lastName: { contains: filters.search, mode: "insensitive" } },
+              ],
+            },
           },
         },
       },
@@ -325,18 +353,22 @@ export async function getPaymentLinks(
     prisma.paymentLink.findMany({
       where,
       include: {
-        studentFee: {
+        installment: {
           include: {
-            student: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
-            },
-            feePlan: {
-              select: {
-                name: true,
+            studentFeeStructure: {
+              include: {
+                student: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+                session: {
+                  select: {
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -367,20 +399,21 @@ export async function getPaymentLinks(
       createdAt: link.createdAt,
       paymentUrl:
         link.razorpayUrl || `${env.APP_BASE_URL}/pay/${link.shortCode}`,
-      studentName: link.studentFee
+      studentName: link.installment
         ? formatFullName(
-            link.studentFee.student.firstName,
-            link.studentFee.student.lastName
+            link.installment.studentFeeStructure.student.firstName,
+            link.installment.studentFeeStructure.student.lastName,
           )
         : "N/A",
-      feePlanName: link.studentFee?.feePlan?.name ?? "N/A",
+      sessionName: link.installment?.studentFeeStructure.session?.name ?? "N/A",
+      installmentNumber: link.installment?.installmentNumber ?? null,
       createdBy: formatFullName(
         link.createdBy.firstName,
-        link.createdBy.lastName
+        link.createdBy.lastName,
       ),
     })),
     total,
-    pagination
+    pagination,
   );
 }
 
@@ -395,18 +428,22 @@ export async function getPaymentLinkById(id: string, scope: TenantScope) {
       branchId: scope.branchId,
     },
     include: {
-      studentFee: {
+      installment: {
         include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          feePlan: {
-            select: {
-              name: true,
+          studentFeeStructure: {
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+              session: {
+                select: {
+                  name: true,
+                },
+              },
             },
           },
         },
@@ -423,13 +460,15 @@ export async function getPaymentLinkById(id: string, scope: TenantScope) {
     paymentUrl:
       paymentLink.razorpayUrl ||
       `${env.APP_BASE_URL}/pay/${paymentLink.shortCode}`,
-    studentName: paymentLink.studentFee
+    studentName: paymentLink.installment
       ? formatFullName(
-          paymentLink.studentFee.student.firstName,
-          paymentLink.studentFee.student.lastName
+          paymentLink.installment.studentFeeStructure.student.firstName,
+          paymentLink.installment.studentFeeStructure.student.lastName,
         )
       : "N/A",
-    feePlanName: paymentLink.studentFee?.feePlan?.name ?? "N/A",
+    sessionName:
+      paymentLink.installment?.studentFeeStructure.session?.name ?? "N/A",
+    installmentNumber: paymentLink.installment?.installmentNumber ?? null,
   };
 }
 
@@ -458,15 +497,16 @@ export async function cancelPaymentLink(id: string, scope: TenantScope) {
 
 /**
  * Mark payment link as paid (called from webhook)
+ * Creates InstallmentPayment record and updates installment status
  */
 export async function markPaymentLinkPaid(
   shortCode: string,
-  razorpayPaymentId?: string
+  razorpayPaymentId?: string,
 ) {
   const paymentLink = await prisma.paymentLink.findUnique({
     where: { shortCode },
     include: {
-      studentFee: true,
+      installment: true,
     },
   });
 
@@ -476,49 +516,63 @@ export async function markPaymentLinkPaid(
 
   if (paymentLink.status !== "active") {
     console.warn(
-      `Payment link ${shortCode} is not active (status: ${paymentLink.status})`
+      `Payment link ${shortCode} is not active (status: ${paymentLink.status})`,
     );
     return paymentLink;
   }
 
-  // Update payment link status
-  const updatedLink = await prisma.paymentLink.update({
-    where: { id: paymentLink.id },
-    data: {
-      status: "paid",
-      paidAt: new Date(),
-    },
+  // Use transaction to update payment link and create InstallmentPayment
+  const result = await prisma.$transaction(async (tx) => {
+    // Update payment link status
+    const updatedLink = await tx.paymentLink.update({
+      where: { id: paymentLink.id },
+      data: {
+        status: "paid",
+        paidAt: new Date(),
+      },
+    });
+
+    // Create InstallmentPayment record if installment exists
+    if (paymentLink.installmentId && paymentLink.installment) {
+      const installment = paymentLink.installment;
+
+      // Create InstallmentPayment
+      await tx.installmentPayment.create({
+        data: {
+          installmentId: paymentLink.installmentId,
+          amount: paymentLink.amount,
+          paymentMode: "upi", // Online payments are typically UPI
+          transactionRef: razorpayPaymentId || null,
+          receivedById: paymentLink.createdById,
+          remarks: `Online payment via payment link ${shortCode}`,
+        },
+      });
+
+      // Update installment paid amount and status
+      const newPaidAmount = installment.paidAmount + paymentLink.amount;
+      let newStatus: "upcoming" | "due" | "overdue" | "partial" | "paid";
+
+      if (newPaidAmount >= installment.amount) {
+        newStatus = "paid";
+      } else if (newPaidAmount > 0) {
+        newStatus = "partial";
+      } else {
+        newStatus = installment.status;
+      }
+
+      await tx.feeInstallment.update({
+        where: { id: paymentLink.installmentId },
+        data: {
+          paidAmount: newPaidAmount,
+          status: newStatus,
+        },
+      });
+    }
+
+    return updatedLink;
   });
 
-  // Create fee payment record only if studentFee exists
-  // Note: We need a system user ID for online payments - for now, use createdById
-  if (paymentLink.studentFeeId && paymentLink.studentFee) {
-    await prisma.feePayment.create({
-      data: {
-        studentFeeId: paymentLink.studentFeeId,
-        amount: paymentLink.amount,
-        paymentMode: "upi", // Online payments are typically UPI
-        receivedById: paymentLink.createdById,
-        receivedAt: new Date(),
-      },
-    });
-
-    // Update student fee
-    const newPaidAmount =
-      paymentLink.studentFee.paidAmount + paymentLink.amount;
-    const newStatus =
-      newPaidAmount >= paymentLink.studentFee.totalAmount ? "paid" : "partial";
-
-    await prisma.studentFee.update({
-      where: { id: paymentLink.studentFeeId },
-      data: {
-        paidAmount: newPaidAmount,
-        status: newStatus,
-      },
-    });
-  }
-
-  return updatedLink;
+  return result;
 }
 
 /**

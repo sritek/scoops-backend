@@ -1,15 +1,16 @@
 /**
  * Payment Link Zod Schemas
+ * Updated to use installmentId instead of studentFeeId
  */
 
 import { z } from "zod";
 import { paginationQuerySchema } from "../../utils/pagination.js";
 
 /**
- * Create payment link schema
+ * Create payment link schema - now uses installmentId
  */
 export const createPaymentLinkSchema = z.object({
-  studentFeeId: z.string().uuid(),
+  installmentId: z.string().uuid(),
   expiresInDays: z.number().int().min(1).max(30).optional(),
   description: z.string().max(500).optional(),
 });
