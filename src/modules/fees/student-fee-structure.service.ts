@@ -13,7 +13,7 @@ import { recalculateStudentFeeStructure } from "../scholarships/scholarships.ser
 export async function getStudentFeeStructure(
   studentId: string,
   sessionId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   // Verify student belongs to tenant
   const student = await prisma.student.findFirst({
@@ -72,7 +72,10 @@ export async function getStudentFeeStructure(
 /**
  * Get student fee structure by ID
  */
-export async function getStudentFeeStructureById(id: string, scope: TenantScope) {
+export async function getStudentFeeStructureById(
+  id: string,
+  scope: TenantScope,
+) {
   const structure = await prisma.studentFeeStructure.findFirst({
     where: {
       id,
@@ -138,7 +141,7 @@ export async function getStudentFeeStructureById(id: string, scope: TenantScope)
  */
 export async function createStudentFeeStructure(
   input: CreateStudentFeeStructureInput,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   // Verify student belongs to tenant
   const student = await prisma.student.findFirst({
@@ -175,7 +178,7 @@ export async function createStudentFeeStructure(
 
   if (existing) {
     throw new BadRequestError(
-      "Fee structure already exists for this student and session. Use update instead."
+      "Fee structure already exists for this student and session. Use update instead.",
     );
   }
 
@@ -190,11 +193,16 @@ export async function createStudentFeeStructure(
   });
 
   if (components.length !== componentIds.length) {
-    throw new BadRequestError("One or more fee components are invalid or inactive");
+    throw new BadRequestError(
+      "One or more fee components are invalid or inactive",
+    );
   }
 
   // Calculate amounts
-  const grossAmount = input.lineItems.reduce((sum, li) => sum + li.adjustedAmount, 0);
+  const grossAmount = input.lineItems.reduce(
+    (sum, li) => sum + li.adjustedAmount,
+    0,
+  );
 
   // Get any existing scholarships
   const scholarships = await prisma.studentScholarship.findMany({
@@ -218,9 +226,12 @@ export async function createStudentFeeStructure(
         : discount;
     } else if (ss.scholarship.type === "fixed_amount") {
       scholarshipAmount += ss.scholarship.value;
-    } else if (ss.scholarship.type === "component_waiver" && ss.scholarship.componentId) {
+    } else if (
+      ss.scholarship.type === "component_waiver" &&
+      ss.scholarship.componentId
+    ) {
       const lineItem = input.lineItems.find(
-        (li) => li.feeComponentId === ss.scholarship.componentId
+        (li) => li.feeComponentId === ss.scholarship.componentId,
       );
       scholarshipAmount += lineItem?.adjustedAmount ?? 0;
     }
@@ -282,7 +293,7 @@ export async function createStudentFeeStructure(
 export async function updateStudentFeeStructure(
   id: string,
   input: UpdateStudentFeeStructureInput,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   const existing = await prisma.studentFeeStructure.findFirst({
     where: {
@@ -313,10 +324,15 @@ export async function updateStudentFeeStructure(
     });
 
     if (components.length !== componentIds.length) {
-      throw new BadRequestError("One or more fee components are invalid or inactive");
+      throw new BadRequestError(
+        "One or more fee components are invalid or inactive",
+      );
     }
 
-    grossAmount = input.lineItems.reduce((sum, li) => sum + li.adjustedAmount, 0);
+    grossAmount = input.lineItems.reduce(
+      (sum, li) => sum + li.adjustedAmount,
+      0,
+    );
 
     // Delete existing line items
     await prisma.studentFeeLineItem.deleteMany({
@@ -365,7 +381,10 @@ export async function updateStudentFeeStructure(
 
   // Recalculate scholarships if line items changed
   if (input.lineItems) {
-    await recalculateStudentFeeStructure(existing.studentId, existing.sessionId);
+    await recalculateStudentFeeStructure(
+      existing.studentId,
+      existing.sessionId,
+    );
   }
 
   return structure;
@@ -376,7 +395,7 @@ export async function updateStudentFeeStructure(
  */
 export async function getAllStudentFeeStructures(
   sessionId: string,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   return prisma.studentFeeStructure.findMany({
     where: {
@@ -426,7 +445,7 @@ export async function getAllStudentFeeStructures(
 export async function getStudentFeeSummary(
   studentId: string,
   sessionId: string | undefined,
-  scope: TenantScope
+  scope: TenantScope,
 ) {
   // Verify student belongs to tenant
   const student = await prisma.student.findFirst({
@@ -494,22 +513,36 @@ export async function getStudentFeeSummary(
   const summary = structures.map((structure) => {
     const totalInstallments = structure.installments.length;
     const paidInstallments = structure.installments.filter(
-      (i) => i.status === "paid"
+      (i) => i.status === "paid",
     ).length;
     const totalPaid = structure.installments.reduce(
       (sum, i) => sum + i.paidAmount,
-      0
+      0,
     );
     const pendingAmount = structure.netAmount - totalPaid;
     const nextDueInstallment = structure.installments.find(
-      (i) => i.status !== "paid"
+      (i) => i.status !== "paid",
     );
+
+    // Build custom discount object if present
+    const customDiscount =
+      structure.customDiscountType &&
+      structure.customDiscountValue !== null &&
+      structure.customDiscountAmount !== null
+        ? {
+            type: structure.customDiscountType as "percentage" | "fixed_amount",
+            value: structure.customDiscountValue,
+            amount: structure.customDiscountAmount,
+            remarks: structure.customDiscountRemarks,
+          }
+        : null;
 
     return {
       id: structure.id,
       session: structure.session,
       grossAmount: structure.grossAmount,
       scholarshipAmount: structure.scholarshipAmount,
+      customDiscount,
       netAmount: structure.netAmount,
       totalPaid,
       pendingAmount: Math.max(0, pendingAmount),

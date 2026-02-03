@@ -18,7 +18,12 @@ import type {
   UpdateStudentInput,
   ParentInput,
   StudentFilters,
+  CustomDiscountInput,
 } from "./students.schema.js";
+import {
+  calculateCustomDiscountAmount,
+  calculateNetAmount,
+} from "../fees/discount-calculation.js";
 
 /**
  * Include clause for student queries to fetch parents and batch
@@ -273,6 +278,7 @@ function mapHealthInput(input: NonNullable<CreateStudentInput["health"]>) {
 
 /**
  * Apply batch fee structure to student within transaction
+ * Optionally applies a custom discount to the fee structure
  */
 async function applyBatchFeeStructureInTransaction(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
@@ -280,6 +286,7 @@ async function applyBatchFeeStructureInTransaction(
   studentId: string,
   sessionId: string,
   scope: TenantScope,
+  customDiscount?: CustomDiscountInput,
 ): Promise<void> {
   // Get batch fee structure
   const structure = await tx.batchFeeStructure.findFirst({
@@ -316,7 +323,31 @@ async function applyBatchFeeStructureInTransaction(
     });
   }
 
-  // Create student fee structure
+  // Calculate custom discount amount if provided
+  let customDiscountType: string | null = null;
+  let customDiscountValue: number | null = null;
+  let customDiscountAmount: number | null = null;
+  let customDiscountRemarks: string | null = null;
+
+  if (customDiscount) {
+    customDiscountType = customDiscount.type;
+    customDiscountValue = customDiscount.value;
+    customDiscountAmount = calculateCustomDiscountAmount(
+      customDiscount.type,
+      customDiscount.value,
+      structure.totalAmount,
+    );
+    customDiscountRemarks = customDiscount.remarks ?? null;
+  }
+
+  // Calculate net amount including custom discount
+  const netAmount = calculateNetAmount(
+    structure.totalAmount,
+    0, // scholarshipAmount starts at 0, will be updated when scholarships are assigned
+    customDiscountAmount ?? 0,
+  );
+
+  // Create student fee structure with custom discount fields
   await tx.studentFeeStructure.create({
     data: {
       studentId,
@@ -325,7 +356,11 @@ async function applyBatchFeeStructureInTransaction(
       batchFeeStructureId: structure.id,
       grossAmount: structure.totalAmount,
       scholarshipAmount: 0,
-      netAmount: structure.totalAmount,
+      netAmount,
+      customDiscountType,
+      customDiscountValue,
+      customDiscountAmount,
+      customDiscountRemarks,
       lineItems: {
         create: structure.lineItems.map((li) => ({
           feeComponentId: li.feeComponentId,
@@ -507,9 +542,10 @@ async function assignScholarshipInTransaction(
       }
     }
 
-    const netAmount = Math.max(
-      0,
-      feeStructure.grossAmount - totalScholarshipAmount,
+    const netAmount = calculateNetAmount(
+      feeStructure.grossAmount,
+      totalScholarshipAmount,
+      feeStructure.customDiscountAmount ?? 0,
     );
 
     // Update fee structure
@@ -545,6 +581,13 @@ export async function createStudent(
       );
     }
     await validateSession(input.sessionId, scope);
+  }
+
+  // Validate custom discount requires fee structure (Requirement 4.4)
+  if (input.customDiscount && !input.batchFeeStructureId) {
+    throw new BadRequestError(
+      "Custom discount requires a fee structure to be applied",
+    );
   }
 
   const student = await prisma.$transaction(
@@ -589,7 +632,7 @@ export async function createStudent(
         }
       }
 
-      // 4. Apply batch fee structure if provided
+      // 4. Apply batch fee structure if provided (with optional custom discount)
       if (input.batchFeeStructureId && input.sessionId) {
         await applyBatchFeeStructureInTransaction(
           tx,
@@ -597,6 +640,7 @@ export async function createStudent(
           newStudent.id,
           input.sessionId,
           scope,
+          input.customDiscount,
         );
       }
 

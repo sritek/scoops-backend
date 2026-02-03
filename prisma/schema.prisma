@@ -774,10 +774,16 @@ model StudentFeeStructure {
   batchFeeStructureId String?            // Reference if copied from batch
   grossAmount         Int                // Total before scholarships
   scholarshipAmount   Int                @default(0)
-  netAmount           Int                // Actual payable = gross - scholarship
+  netAmount           Int                // Actual payable = gross - scholarship - customDiscount
   remarks             String?            // Any special notes
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
+
+  // Custom discount fields (student-specific one-off discounts)
+  customDiscountType    String?   // "percentage" | "fixed_amount" | null
+  customDiscountValue   Int?      // Input value (percentage 0-100 or amount in paise)
+  customDiscountAmount  Int?      // Calculated discount in paise (always positive)
+  customDiscountRemarks String?   // Optional reason for the discount
 
   student           Student              @relation(fields: [studentId], references: [id])
   session           AcademicSession      @relation(fields: [sessionId], references: [id])

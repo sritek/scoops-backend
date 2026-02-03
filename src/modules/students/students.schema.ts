@@ -165,6 +165,37 @@ const studentHealthInputSchema = z.object({
 });
 
 /**
+ * Custom discount type enum
+ */
+export const CustomDiscountType = {
+  PERCENTAGE: "percentage",
+  FIXED_AMOUNT: "fixed_amount",
+} as const;
+
+/**
+ * Schema for custom discount input
+ * Validates percentage (0-100) and fixed amount (positive)
+ */
+export const customDiscountSchema = z
+  .object({
+    type: z.enum(["percentage", "fixed_amount"]),
+    value: z.number().positive("Discount value must be positive"),
+    remarks: z.string().max(500).optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.type === "percentage") {
+        return data.value >= 0 && data.value <= 100;
+      }
+      return data.value > 0;
+    },
+    {
+      message:
+        "Percentage discount must be between 0 and 100, fixed amount must be positive",
+    },
+  );
+
+/**
  * Schema for creating a student
  */
 export const createStudentSchema = z
@@ -190,6 +221,8 @@ export const createStudentSchema = z
     batchFeeStructureId: z.string().uuid().optional(),
     scholarshipIds: z.array(z.string().uuid()).optional(),
     sessionId: z.string().uuid().optional(),
+    // Custom discount for student-specific fee adjustments
+    customDiscount: customDiscountSchema.optional(),
   })
   .refine(
     (data) => {
@@ -260,6 +293,7 @@ export type CreateStudentInput = z.infer<typeof createStudentSchema>;
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
 export type StudentIdParam = z.infer<typeof studentIdParamSchema>;
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
+export type CustomDiscountInput = z.infer<typeof customDiscountSchema>;
 
 /**
  * Student filters for service layer
