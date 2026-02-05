@@ -647,3 +647,104 @@ export async function generateReceiptPDF(
 
   return { stream: doc as unknown as Readable, fileName };
 }
+
+/**
+ * Generate payment summary PDF for an installment payment
+ * Returns a readable stream; scope-checked by tenant/branch via student
+ */
+export async function generatePaymentSummaryPDF(
+  paymentId: string,
+  scope: TenantScope,
+): Promise<{ stream: Readable; fileName: string } | null> {
+  const payment = await prisma.installmentPayment.findFirst({
+    where: { id: paymentId },
+    include: {
+      installment: {
+        include: {
+          studentFeeStructure: {
+            include: { student: true },
+          },
+        },
+      },
+      receivedBy: {
+        select: { firstName: true, lastName: true },
+      },
+    },
+  });
+
+  if (
+    !payment ||
+    payment.installment.studentFeeStructure.student.orgId !== scope.orgId ||
+    payment.installment.studentFeeStructure.student.branchId !== scope.branchId
+  ) {
+    return null;
+  }
+
+  const student = payment.installment.studentFeeStructure.student;
+  const inst = payment.installment;
+  const receivedByName =
+    payment.receivedBy &&
+    formatFullName(payment.receivedBy.firstName, payment.receivedBy.lastName);
+
+  const doc = new PDFDocument({
+    size: "A4",
+    margin: 50,
+    info: {
+      Title: "Payment Summary",
+      Author: "Scoops",
+    },
+  });
+
+  const pageWidth = doc.page.width - 100;
+
+  doc.fontSize(18).font("Helvetica-Bold").text("Payment Summary", 50, 50, {
+    align: "center",
+    width: pageWidth,
+  });
+
+  doc.moveDown(1.5);
+  doc.strokeColor("#cccccc").lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+  doc.moveDown(1);
+
+  let y = doc.y;
+  const leftLabel = 50;
+  const leftValue = 200;
+
+  doc.fontSize(10).font("Helvetica-Bold").text("Date:", leftLabel, y);
+  doc.font("Helvetica").text(formatDate(payment.receivedAt), leftValue, y);
+  y += 22;
+
+  doc.font("Helvetica-Bold").text("Installment:", leftLabel, y);
+  doc.font("Helvetica").text(`#${inst.installmentNumber}`, leftValue, y);
+  y += 22;
+
+  doc.font("Helvetica-Bold").text("Payment mode:", leftLabel, y);
+  doc.font("Helvetica").text(formatPaymentMode(payment.paymentMode), leftValue, y);
+  y += 22;
+
+  doc.font("Helvetica-Bold").text("Reference:", leftLabel, y);
+  doc.font("Helvetica").text(payment.transactionRef || "—", leftValue, y);
+  y += 22;
+
+  doc.font("Helvetica-Bold").text("Amount:", leftLabel, y);
+  doc.font("Helvetica").text(formatCurrency(payment.amount), leftValue, y);
+  y += 22;
+
+  doc.font("Helvetica-Bold").text("Remarks:", leftLabel, y);
+  doc.font("Helvetica").text(payment.remarks || "—", leftValue, y);
+  y += 22;
+
+  if (receivedByName) {
+    doc.font("Helvetica-Bold").text("Received by:", leftLabel, y);
+    doc.font("Helvetica").text(receivedByName, leftValue, y);
+  }
+
+  doc.moveDown(2);
+  doc.fontSize(9).font("Helvetica").text(`Student: ${formatFullName(student.firstName, student.lastName)}`, 50, doc.y, { width: pageWidth });
+  doc.text(`Generated on: ${formatDate(new Date())}`, 50, doc.y, { align: "center", width: pageWidth });
+
+  doc.end();
+
+  const fileName = `Payment_Summary_${paymentId}.pdf`;
+  return { stream: doc as unknown as Readable, fileName };
+}

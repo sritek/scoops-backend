@@ -136,6 +136,47 @@ export async function feesRoutes(app: FastifyInstance) {
   );
 
   /**
+   * GET /fees/payments/:paymentId/summary-pdf
+   * Download payment summary as PDF
+   * Requires: FEE_VIEW
+   */
+  app.get(
+    "/payments/:paymentId/summary-pdf",
+    {
+      schema: {
+        tags: ["Payments"],
+        summary: "Download payment summary PDF",
+        description: "Generates and downloads a payment summary as a PDF file",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            paymentId: { type: "string", format: "uuid" },
+          },
+          required: ["paymentId"],
+        },
+        response: {
+          200: {
+            type: "string",
+            description: "PDF file stream",
+          },
+          404: {
+            type: "object",
+            properties: {
+              error: { type: "string" },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_VIEW),
+      ],
+    },
+    controller.downloadPaymentSummaryPDF,
+  );
+
+  /**
    * POST /fees/receipts/:id/send
    * Send receipt via WhatsApp
    * Requires: FEE_VIEW

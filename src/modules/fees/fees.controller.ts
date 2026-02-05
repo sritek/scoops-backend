@@ -5,6 +5,7 @@ import { parsePaginationParams } from "../../utils/pagination.js";
 import {
   listReceiptsQuerySchema,
   receiptIdParamSchema,
+  paymentIdParamSchema,
 } from "./fees.schema.js";
 import {
   createFeeComponentSchema,
@@ -126,6 +127,45 @@ export async function downloadReceiptPDF(
   }
 
   // Set headers for PDF download
+  reply.header("Content-Type", "application/pdf");
+  reply.header(
+    "Content-Disposition",
+    `attachment; filename="${result.fileName}"`,
+  );
+
+  return reply.send(result.stream);
+}
+
+/**
+ * GET /fees/payments/:paymentId/summary-pdf
+ * Download payment summary as PDF
+ */
+export async function downloadPaymentSummaryPDF(
+  request: ProtectedRequest,
+  reply: FastifyReply,
+) {
+  const params = paymentIdParamSchema.safeParse(request.params);
+  if (!params.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid payment ID",
+      details: params.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  const result = await receiptService.generatePaymentSummaryPDF(
+    params.data.paymentId,
+    scope,
+  );
+
+  if (!result) {
+    return reply.code(404).send({
+      error: "Not Found",
+      message: "Payment not found",
+    });
+  }
+
   reply.header("Content-Type", "application/pdf");
   reply.header(
     "Content-Disposition",

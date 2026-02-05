@@ -159,3 +159,48 @@ export async function getAttendanceHistory(
 
   return reply.code(200).send(history);
 }
+
+/**
+ * GET /attendance/student/:studentId/history
+ * Get attendance history for a single student
+ */
+export async function getStudentAttendanceHistory(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const { studentId } = request.params as { studentId?: string };
+
+  if (!studentId) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Missing studentId parameter",
+    });
+  }
+
+  const query = request.query as {
+    startDate?: string;
+    endDate?: string;
+    page?: number | string;
+    limit?: number | string;
+  };
+
+  const pagination = parsePaginationParams({
+    page: query.page != null ? String(query.page) : undefined,
+    limit: query.limit != null ? String(query.limit) : undefined,
+  });
+
+  const scope = getTenantScopeFromRequest(request);
+
+  const data = await attendanceService.getStudentAttendanceHistory(
+    scope,
+    studentId,
+    {
+      startDate: query.startDate,
+      endDate: query.endDate,
+      page: pagination.page,
+      limit: pagination.limit,
+    }
+  );
+
+  return reply.code(200).send({ data });
+}

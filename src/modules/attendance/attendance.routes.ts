@@ -162,4 +162,66 @@ export async function attendanceRoutes(app: FastifyInstance) {
     },
     controller.getAttendanceHistory
   );
+
+  /**
+   * GET /attendance/student/:studentId/history
+   * Get attendance history for a single student
+   * Requires: ATTENDANCE_VIEW
+   */
+  app.get(
+    "/student/:studentId/history",
+    {
+      schema: {
+        tags: ["Attendance"],
+        summary: "Get student attendance history",
+        description:
+          "Returns attendance history and summary metrics for a single student over an optional date range.",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            studentId: {
+              type: "string",
+              format: "uuid",
+              description: "Student ID",
+            },
+          },
+          required: ["studentId"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            startDate: {
+              type: "string",
+              format: "date",
+              description: "Start date (YYYY-MM-DD)",
+            },
+            endDate: {
+              type: "string",
+              format: "date",
+              description: "End date (YYYY-MM-DD)",
+            },
+            page: {
+              type: "number",
+              minimum: 1,
+              default: 1,
+              description: "Page number (1-indexed)",
+            },
+            limit: {
+              type: "number",
+              minimum: 1,
+              maximum: 100,
+              default: 20,
+              description: "Number of records per page",
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.ATTENDANCE_VIEW),
+      ],
+    },
+    controller.getStudentAttendanceHistory
+  );
 }

@@ -22,6 +22,13 @@ export const receiptIdParamSchema = z.object({
 });
 
 /**
+ * Schema for payment ID param (installment payment)
+ */
+export const paymentIdParamSchema = z.object({
+  paymentId: z.string().uuid(),
+});
+
+/**
  * Schema for listing receipts with pagination and filters
  */
 export const listReceiptsQuerySchema = paginationQuerySchema.extend({

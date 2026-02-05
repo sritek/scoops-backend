@@ -86,12 +86,17 @@ export async function getStudents(
     where.category = filters.category;
   }
 
-  // Add search filter (search by first name or last name)
-  if (filters?.search) {
-    where.OR = [
-      { firstName: { contains: filters.search, mode: "insensitive" } },
-      { lastName: { contains: filters.search, mode: "insensitive" } },
-    ];
+  // Add search filter (token-based: each word must match firstName or lastName)
+  if (filters?.search?.trim()) {
+    const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      where.AND = tokens.map((token) => ({
+        OR: [
+          { firstName: { contains: token, mode: "insensitive" } },
+          { lastName: { contains: token, mode: "insensitive" } },
+        ],
+      }));
+    }
   }
 
   // Execute query and count in parallel

@@ -1,6 +1,6 @@
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
-import { BadRequestError } from "../../utils/error-handler.js";
+import { BadRequestError, NotFoundError } from "../../utils/error-handler.js";
 import { emitEvent, emitEvents, EVENT_TYPES } from "../events/index.js";
 import { ROLES } from "../../config/permissions";
 import type { MarkAttendanceInput } from "./attendance.schema.js";
@@ -428,4 +428,120 @@ export async function getAttendanceHistory(
   });
 
   return createPaginatedResponse(formattedSessions, total, pagination);
+}
+
+/**
+ * Get attendance history for a single student
+ * Returns paginated records plus a summary over all matching records
+ */
+export async function getStudentAttendanceHistory(
+  scope: TenantScope,
+  studentId: string,
+  options: {
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  } = {}
+) {
+  // Verify student belongs to tenant/branch
+  const student = await prisma.student.findFirst({
+    where: {
+      id: studentId,
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+    },
+  });
+
+  if (!student) {
+    throw new NotFoundError("Student not found");
+  }
+
+  const page = options.page ?? 1;
+  const limit = options.limit ?? 20;
+  const skip = calculateSkip({ page, limit });
+
+  const { startDate, endDate } = options;
+
+  const where: Prisma.AttendanceRecordWhereInput = {
+    studentId,
+    session: {
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+    },
+  };
+
+  if (startDate || endDate) {
+    where.session.attendanceDate = {};
+    if (startDate) {
+      where.session.attendanceDate.gte = new Date(startDate);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setDate(end.getDate() + 1);
+      where.session.attendanceDate.lt = end;
+    }
+  }
+
+  const [records, total, presentCount] = await Promise.all([
+    prisma.attendanceRecord.findMany({
+      where,
+      orderBy: {
+        session: { attendanceDate: "desc" },
+      },
+      skip,
+      take: limit,
+      include: {
+        session: {
+          select: {
+            attendanceDate: true,
+            batchId: true,
+            batch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.attendanceRecord.count({ where }),
+    prisma.attendanceRecord.count({
+      where: { ...where, status: "present" },
+    }),
+  ]);
+
+  const totalPages = Math.ceil(total / limit);
+  const presentDays = presentCount;
+  const absentDays = total - presentCount;
+  const lateDays = 0; // Late is not currently a separate enum state
+  const attendancePercentage =
+    total > 0 ? Math.round((presentDays / total) * 100) : null;
+
+  const formattedRecords = records.map((r) => ({
+    date: r.session.attendanceDate.toISOString().split("T")[0],
+    status: r.status,
+    batchId: r.session.batchId,
+    batchName: r.session.batch?.name ?? "",
+  }));
+
+  return {
+    records: formattedRecords,
+    summary: {
+      totalSessions: total,
+      presentDays,
+      absentDays,
+      lateDays,
+      attendancePercentage,
+    },
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
+  };
 }
