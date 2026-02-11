@@ -21,12 +21,14 @@ function formatFullName(firstName: string, lastName: string): string {
  * Format currency in INR
  */
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
+  // Display amounts as "Rs. 1,000" instead of the generic currency symbol.
+  const formatted = new Intl.NumberFormat("en-IN", {
+    style: "decimal",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+
+  return `Rs. ${formatted}`;
 }
 
 /**
@@ -435,6 +437,89 @@ export async function getReceiptById(id: string, scope: TenantScope) {
       ),
     },
   };
+}
+
+/**
+ * Backfill receipts for existing installment payments.
+ * Can be scoped to a specific tenant (org/branch) or run for all tenants.
+ * Safe to run multiple times thanks to createReceipt idempotency.
+ */
+export async function backfillReceiptsForInstallmentPayments(
+  scope?: TenantScope,
+): Promise<void> {
+  const where: Prisma.InstallmentPaymentWhereInput = {};
+
+  if (scope) {
+    where.installment = {
+      studentFeeStructure: {
+        student: {
+          orgId: scope.orgId,
+          branchId: scope.branchId,
+        },
+      },
+    };
+  }
+
+  const payments = await prisma.installmentPayment.findMany({
+    where,
+    select: {
+      id: true,
+      receivedById: true,
+    },
+  });
+
+  for (const payment of payments) {
+    if (!payment.receivedById) {
+      // Skip payments without a recorded receiver; they cannot have a valid receipt.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Skipping receipt backfill for payment ${payment.id} - missing receivedById`,
+      );
+      continue;
+    }
+
+    try {
+      const effectiveScope = scope ?? (await (async () => {
+        const fullPayment = await prisma.installmentPayment.findFirst({
+          where: { id: payment.id },
+          include: {
+            installment: {
+              include: {
+                studentFeeStructure: {
+                  include: {
+                    student: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (
+          !fullPayment ||
+          !fullPayment.installment.studentFeeStructure.student
+        ) {
+          throw new NotFoundError("Installment payment");
+        }
+
+        const student = fullPayment.installment.studentFeeStructure.student;
+
+        return {
+          orgId: student.orgId,
+          branchId: student.branchId,
+        } as TenantScope;
+      })());
+
+      await createReceipt(payment.id, effectiveScope, payment.receivedById);
+    } catch (error) {
+      // Log and continue; do not fail the entire backfill.
+      // eslint-disable-next-line no-console
+      console.error(
+        `Failed to backfill receipt for payment ${payment.id}:`,
+        error,
+      );
+    }
+  }
 }
 
 /**

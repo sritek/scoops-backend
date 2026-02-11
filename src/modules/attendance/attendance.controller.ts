@@ -95,6 +95,7 @@ export async function markAttendance(
   const attendance = await attendanceService.markAttendance(
     body.data,
     userId,
+    role,
     scope
   );
 

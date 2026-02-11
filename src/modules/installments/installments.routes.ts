@@ -192,13 +192,17 @@ export async function feeInstallmentsRoutes(app: FastifyInstance) {
             ...paginationQueryOpenApi.properties,
             status: {
               type: "string",
-              enum: ["upcoming", "due", "overdue", "partial"],
-              description: "Filter by installment status",
+              enum: ["upcoming", "due", "overdue", "partial", "paid"],
+              description: "Filter by installment status (including paid)",
             },
             batchId: {
               type: "string",
               format: "uuid",
               description: "Filter by batch",
+            },
+            search: {
+              type: "string",
+              description: "Search by student name",
             },
           },
         },

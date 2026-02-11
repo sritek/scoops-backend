@@ -248,6 +248,7 @@ export async function listPendingInstallments(
   const filters = {
     status: query.data.status,
     batchId: query.data.batchId,
+    search: query.data.search,
   };
 
   const result = await installmentsService.getPendingInstallments(scope, pagination, filters);

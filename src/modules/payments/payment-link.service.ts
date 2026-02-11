@@ -19,6 +19,7 @@ import {
   isRazorpayConfigured,
 } from "./razorpay.provider.js";
 import { randomBytes } from "crypto";
+import { createReceipt } from "../fees/receipt.service.js";
 
 /**
  * Generate a short code for payment link URLs
@@ -522,6 +523,8 @@ export async function markPaymentLinkPaid(
   }
 
   // Use transaction to update payment link and create InstallmentPayment
+  let newPaymentId: string | null = null;
+
   const result = await prisma.$transaction(async (tx) => {
     // Update payment link status
     const updatedLink = await tx.paymentLink.update({
@@ -537,7 +540,7 @@ export async function markPaymentLinkPaid(
       const installment = paymentLink.installment;
 
       // Create InstallmentPayment
-      await tx.installmentPayment.create({
+      const payment = await tx.installmentPayment.create({
         data: {
           installmentId: paymentLink.installmentId,
           amount: paymentLink.amount,
@@ -547,6 +550,8 @@ export async function markPaymentLinkPaid(
           remarks: `Online payment via payment link ${shortCode}`,
         },
       });
+
+      newPaymentId = payment.id;
 
       // Update installment paid amount and status
       const newPaidAmount = installment.paidAmount + paymentLink.amount;
@@ -571,6 +576,17 @@ export async function markPaymentLinkPaid(
 
     return updatedLink;
   });
+
+  // Create receipt for the online payment, if we created one.
+  // Scope is derived from the payment link's org and branch.
+  if (newPaymentId) {
+    const scope: TenantScope = {
+      orgId: paymentLink.orgId,
+      branchId: paymentLink.branchId,
+    };
+
+    await createReceipt(newPaymentId, scope, paymentLink.createdById);
+  }
 
   return result;
 }

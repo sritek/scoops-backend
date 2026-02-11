@@ -555,6 +555,15 @@ export async function applyBatchFeeStructureToStudents(
     scope,
   );
 
+  if ("overwriteBlocked" in result && result.overwriteBlocked) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: result.message,
+      code: result.code,
+      affectedStudentIds: result.affectedStudentIds,
+    });
+  }
+
   return reply.code(200).send({
     data: result,
     message: result.message,

@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
-import { NotFoundError } from "../../utils/error-handler.js";
+import { NotFoundError, BadRequestError } from "../../utils/error-handler.js";
 import {
   type PaginationParams,
   createPaginatedResponse,
@@ -250,18 +250,12 @@ export async function updateBatch(
     }
   }
 
-  // Validate session if provided
-  if (input.sessionId) {
-    const session = await prisma.academicSession.findFirst({
-      where: {
-        id: input.sessionId,
-        orgId: scope.orgId,
-      },
-    });
-
-    if (!session) {
-      throw new NotFoundError("Academic session not found");
-    }
+  // Do not allow changing academic session for existing batches
+  if (
+    input.sessionId !== undefined &&
+    input.sessionId !== existing.sessionId
+  ) {
+    throw new BadRequestError("Changing academic session is not allowed");
   }
 
   const batch = await prisma.batch.update({
@@ -271,8 +265,8 @@ export async function updateBatch(
       academicLevel: input.academicLevel,
       stream: input.stream,
       classTeacherId: input.classTeacherId,
-      sessionId: input.sessionId,
       isActive: input.isActive,
+      // sessionId is intentionally omitted so the existing value is preserved
     },
     include: {
       classTeacher: {

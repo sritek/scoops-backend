@@ -4,14 +4,26 @@ import type { Role } from "../../types/auth.js";
 import { ROLES } from "../../config/permissions";
 
 /**
+ * Server local date as YYYY-MM-DD and range [start, end) for that day (for session queries).
+ * Single source of truth for "today" so pending/completed batches stay consistent.
+ */
+function getTodayDateRange(): { dateStr: string; start: Date; end: Date } {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const dateStr = `${y}-${m}-${d}`;
+  const start = new Date(dateStr);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { dateStr, start, end };
+}
+
+/**
  * Get today's attendance summary
  */
 export async function getAttendanceSummary(scope: TenantScope) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const { dateStr, start, end } = getTodayDateRange();
 
   // Get all sessions for today
   const sessions = await prisma.attendanceSession.findMany({
@@ -19,8 +31,8 @@ export async function getAttendanceSummary(scope: TenantScope) {
       orgId: scope.orgId,
       branchId: scope.branchId,
       attendanceDate: {
-        gte: today,
-        lt: tomorrow,
+        gte: start,
+        lt: end,
       },
     },
     include: {
@@ -95,7 +107,7 @@ export async function getAttendanceSummary(scope: TenantScope) {
   });
 
   return {
-    date: today.toISOString().split("T")[0],
+    date: dateStr,
     totalPresent,
     totalAbsent,
     totalMarked: totalPresent + totalAbsent,
@@ -233,11 +245,7 @@ export async function getTeacherAttendanceSummary(
   userId: string,
   scope: TenantScope,
 ) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const { dateStr, start, end } = getTodayDateRange();
 
   // Find the batch where user is class teacher
   const teacherBatch = await prisma.batch.findFirst({
@@ -260,7 +268,7 @@ export async function getTeacherAttendanceSummary(
 
   if (!teacherBatch) {
     return {
-      date: today.toISOString().split("T")[0],
+      date: dateStr,
       totalPresent: 0,
       totalAbsent: 0,
       totalMarked: 0,
@@ -280,8 +288,8 @@ export async function getTeacherAttendanceSummary(
       orgId: scope.orgId,
       branchId: scope.branchId,
       attendanceDate: {
-        gte: today,
-        lt: tomorrow,
+        gte: start,
+        lt: end,
       },
     },
     include: {
@@ -317,7 +325,7 @@ export async function getTeacherAttendanceSummary(
     : [];
 
   return {
-    date: today.toISOString().split("T")[0],
+    date: dateStr,
     totalPresent: present,
     totalAbsent: absent,
     totalMarked: present + absent,
@@ -518,10 +526,11 @@ export async function getAdminActionItems(
   scope: TenantScope,
 ): Promise<ActionItem[]> {
   const actionItems: ActionItem[] = [];
-  const today = new Date();
+  const { start: todayStart, end: todayEnd } = getTodayDateRange();
+  const today = new Date(todayStart);
   today.setHours(0, 0, 0, 0);
 
-  // Check for pending attendance
+  // Check for pending attendance (same "today" as getAttendanceSummary)
   const batchesWithoutAttendance = await prisma.batch.count({
     where: {
       orgId: scope.orgId,
@@ -530,8 +539,8 @@ export async function getAdminActionItems(
       attendanceSessions: {
         none: {
           attendanceDate: {
-            gte: today,
-            lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+            gte: todayStart,
+            lt: todayEnd,
           },
         },
       },

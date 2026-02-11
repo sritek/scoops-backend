@@ -348,14 +348,36 @@ export async function updateBatchFeeStructure(
   return structure;
 }
 
+/** Result when overwrite is blocked because students have payments */
+export type ApplyOverwriteBlockedResult = {
+  overwriteBlocked: true;
+  code: "OVERWRITE_BLOCKED";
+  message: string;
+  affectedStudentIds: string[];
+};
+
+/** Success result */
+export type ApplySuccessResult = {
+  applied: number;
+  skipped: number;
+  message: string;
+};
+
+export type ApplyToStudentsResult =
+  | ApplySuccessResult
+  | ApplyOverwriteBlockedResult;
+
 /**
- * Apply batch fee structure to all students in the batch
+ * Apply batch fee structure to all students in the batch.
+ * When overwriteExisting is true, pre-checks that no target student has
+ * installment payments; if any do, returns OVERWRITE_BLOCKED without deleting.
+ * When safe, deletes in dependency order inside a single transaction.
  */
 export async function applyToStudents(
   id: string,
   overwriteExisting: boolean,
   scope: TenantScope
-) {
+): Promise<ApplyToStudentsResult> {
   const structure = await prisma.batchFeeStructure.findFirst({
     where: {
       id,
@@ -394,68 +416,146 @@ export async function applyToStudents(
     };
   }
 
-  // Check existing student fee structures
+  // Check existing student fee structures (need id for payment check and delete)
   const existingStructures = await prisma.studentFeeStructure.findMany({
     where: {
       studentId: { in: studentIds },
       sessionId: structure.sessionId,
     },
     select: {
+      id: true,
       studentId: true,
     },
   });
 
-  const existingStudentIds = new Set(existingStructures.map((s) => s.studentId));
+  const existingByStudentId = new Map(
+    existingStructures.map((s) => [s.studentId, s])
+  );
 
-  let applied = 0;
-  let skipped = 0;
-
-  for (const studentId of studentIds) {
-    const hasExisting = existingStudentIds.has(studentId);
-
-    if (hasExisting && !overwriteExisting) {
-      skipped++;
-      continue;
-    }
-
-    // If overwriting, delete existing structure
-    if (hasExisting && overwriteExisting) {
-      await prisma.studentFeeStructure.deleteMany({
-        where: {
-          studentId,
-          sessionId: structure.sessionId,
+  // If overwriting: pre-check that no existing structure has payments (would block delete)
+  if (overwriteExisting && existingStructures.length > 0) {
+    const existingStructureIds = existingStructures.map((s) => s.id);
+    const withPayments = await prisma.installmentPayment.findMany({
+      where: {
+        installment: {
+          studentFeeStructureId: { in: existingStructureIds },
         },
-      });
-    }
-
-    // Create student fee structure
-    await prisma.studentFeeStructure.create({
-      data: {
-        studentId,
-        sessionId: structure.sessionId,
-        source: "batch_default",
-        batchFeeStructureId: structure.id,
-        grossAmount: structure.totalAmount,
-        scholarshipAmount: 0,
-        netAmount: structure.totalAmount,
-        lineItems: {
-          create: structure.lineItems.map((li) => ({
-            feeComponentId: li.feeComponentId,
-            originalAmount: li.amount,
-            adjustedAmount: li.amount,
-          })),
+      },
+      select: {
+        installment: {
+          select: {
+            studentFeeStructureId: true,
+            studentFeeStructure: { select: { studentId: true } },
+          },
         },
       },
     });
 
-    applied++;
+    if (withPayments.length > 0) {
+      const affectedStudentIds = [
+        ...new Set(
+          withPayments.map(
+            (p) => p.installment.studentFeeStructure.studentId
+          )
+        ),
+      ];
+      const names = await prisma.student.findMany({
+        where: { id: { in: affectedStudentIds } },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      const nameList = names
+        .map((n) => `${n.firstName} ${n.lastName}`.trim())
+        .join(", ");
+      return {
+        overwriteBlocked: true,
+        code: "OVERWRITE_BLOCKED",
+        message: `Cannot overwrite fee structure for students who have payments. Remove payments or apply without overwrite. Affected students: ${nameList || affectedStudentIds.join(", ")}`,
+        affectedStudentIds,
+      };
+    }
   }
 
-  return {
-    applied,
-    skipped,
-    message: `Applied to ${applied} students, skipped ${skipped} (already have fee structure)`,
-  };
+  // Single transaction: ordered deletes for overwritten structures, then creates
+  const result = await prisma.$transaction(async (tx) => {
+    let applied = 0;
+    let skipped = 0;
+
+    for (const studentId of studentIds) {
+      const existing = existingByStudentId.get(studentId);
+
+      if (existing && !overwriteExisting) {
+        skipped++;
+        continue;
+      }
+
+      if (existing && overwriteExisting) {
+        const structureId = existing.id;
+        const installments = await tx.feeInstallment.findMany({
+          where: { studentFeeStructureId: structureId },
+          select: { id: true },
+        });
+        const installmentIds = installments.map((i) => i.id);
+
+        if (installmentIds.length > 0) {
+          const payments = await tx.installmentPayment.findMany({
+            where: { installmentId: { in: installmentIds } },
+            select: { id: true },
+          });
+          const paymentIds = payments.map((p) => p.id);
+
+          await tx.receipt.deleteMany({
+            where: { installmentPaymentId: { in: paymentIds } },
+          });
+          await tx.installmentPayment.deleteMany({
+            where: { id: { in: paymentIds } },
+          });
+          await tx.feeReminder.deleteMany({
+            where: { installmentId: { in: installmentIds } },
+          });
+          await tx.paymentLink.updateMany({
+            where: { installmentId: { in: installmentIds } },
+            data: { installmentId: null },
+          });
+          await tx.feeInstallment.deleteMany({
+            where: { studentFeeStructureId: structureId },
+          });
+        }
+
+        await tx.studentFeeStructure.delete({
+          where: { id: structureId },
+        });
+      }
+
+      await tx.studentFeeStructure.create({
+        data: {
+          studentId,
+          sessionId: structure.sessionId,
+          source: "batch_default",
+          batchFeeStructureId: structure.id,
+          grossAmount: structure.totalAmount,
+          scholarshipAmount: 0,
+          netAmount: structure.totalAmount,
+          lineItems: {
+            create: structure.lineItems.map((li) => ({
+              feeComponentId: li.feeComponentId,
+              originalAmount: li.amount,
+              adjustedAmount: li.amount,
+            })),
+          },
+        },
+      });
+
+      applied++;
+    }
+
+    return {
+      applied,
+      skipped,
+      message: `Applied to ${applied} students, skipped ${skipped} (already have fee structure)`,
+    };
+  });
+
+  return result;
 }
 
 /**

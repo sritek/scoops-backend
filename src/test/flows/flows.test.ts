@@ -434,6 +434,55 @@ describe("Happy Path Flows", () => {
 
       expect(response.status).toBe(200);
     });
+
+    it("should return all active students after partial save (unmarked have status null)", async () => {
+      const batch = await prisma.batch.findFirst({
+        where: {
+          branch: { name: "Main Branch" },
+        },
+        include: {
+          students: {
+            where: { status: "active" },
+            select: { id: true },
+          },
+        },
+      });
+
+      if (!batch || batch.students.length < 2) {
+        return; // Skip if no batch or too few students
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const activeStudentIds = batch.students.map((s: { id: string }) => s.id);
+      const markedStudentId = activeStudentIds[0];
+
+      await request(app.server)
+        .post("/api/v1/attendance/mark")
+        .set(await getAuthHeaders(USERS.admin.email))
+        .send({
+          batchId: batch.id,
+          date: today,
+          records: [{ studentId: markedStudentId, status: "present" }],
+        });
+
+      const getResponse = await request(app.server)
+        .get(`/api/v1/attendance?batchId=${batch.id}&date=${today}`)
+        .set(await getAuthHeaders(USERS.admin.email));
+
+      expect(getResponse.status).toBe(200);
+
+      const { data } = getResponse.body as { data: { records: { studentId: string; status: string | null }[] } };
+      expect(data.records).toHaveLength(activeStudentIds.length);
+
+      const markedRecord = data.records.find((r: { studentId: string }) => r.studentId === markedStudentId);
+      expect(markedRecord?.status).toBe("present");
+
+      const unmarkedRecords = data.records.filter((r: { studentId: string }) => r.studentId !== markedStudentId);
+      expect(unmarkedRecords.length).toBe(activeStudentIds.length - 1);
+      unmarkedRecords.forEach((r: { status: string | null }) => {
+        expect(r.status).toBeNull();
+      });
+    });
   });
 
   // ============================================

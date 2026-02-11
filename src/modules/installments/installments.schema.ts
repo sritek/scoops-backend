@@ -87,8 +87,9 @@ export const studentIdParamSchema = z.object({
  * Schema for listing pending installments
  */
 export const listPendingInstallmentsQuerySchema = paginationQuerySchema.extend({
-  status: z.enum(["upcoming", "due", "overdue", "partial"]).optional(),
+  status: z.enum(["upcoming", "due", "overdue", "partial", "paid"]).optional(),
   batchId: z.string().uuid().optional(),
+  search: z.string().min(1).max(100).optional(),
 });
 
 /**
@@ -108,6 +109,7 @@ export type ListPendingInstallmentsQuery = z.infer<typeof listPendingInstallment
  * Pending installments filters for service layer
  */
 export interface PendingInstallmentsFilters {
-  status?: "upcoming" | "due" | "overdue" | "partial";
+  status?: "upcoming" | "due" | "overdue" | "partial" | "paid";
   batchId?: string;
+  search?: string;
 }

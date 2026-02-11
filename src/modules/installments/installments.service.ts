@@ -1,4 +1,7 @@
-import type { Prisma, InstallmentStatus as PrismaInstallmentStatus } from "@prisma/client";
+import type {
+  Prisma,
+  InstallmentStatus as PrismaInstallmentStatus,
+} from "@prisma/client";
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
 import { NotFoundError, BadRequestError } from "../../utils/error-handler.js";
@@ -15,6 +18,7 @@ import type {
   PendingInstallmentsFilters,
   EMISplitConfig,
 } from "./installments.schema.js";
+import { createReceipt } from "../fees/receipt.service.js";
 
 // =====================
 // EMI Plan Templates
@@ -410,6 +414,11 @@ export async function recordInstallmentPayment(
     return { payment, installment: updatedInstallment };
   });
 
+  // Create receipt for this payment.
+  // We call this outside the transaction and rely on createReceipt's idempotency
+  // to avoid duplicate receipts if called multiple times for the same payment.
+  await createReceipt(result.payment.id, scope, userId);
+
   return result;
 }
 
@@ -424,30 +433,47 @@ export async function getPendingInstallments(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const studentWhere: Prisma.StudentWhereInput = {
+    orgId: scope.orgId,
+    branchId: scope.branchId,
+    status: "active",
+  };
+
+  if (filters?.batchId) {
+    studentWhere.batchId = filters.batchId;
+  }
+
+  if (filters?.search?.trim()) {
+    const tokens = filters.search.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      studentWhere.AND = tokens.map((token) => ({
+        OR: [
+          {
+            firstName: {
+              contains: token,
+              mode: "insensitive",
+            },
+          },
+          {
+            lastName: {
+              contains: token,
+              mode: "insensitive",
+            },
+          },
+        ],
+      }));
+    }
+  }
+
   const where: Prisma.FeeInstallmentWhereInput = {
     studentFeeStructure: {
-      student: {
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-        status: "active",
-      },
+      student: studentWhere,
     },
-    status: { not: "paid" },
   };
 
   // Add status filter
   if (filters?.status) {
-    where.status = filters.status;
-  }
-
-  // Add batch filter
-  if (filters?.batchId) {
-    const studentFeeStructure = where.studentFeeStructure as Prisma.StudentFeeStructureWhereInput;
-    const currentStudent = studentFeeStructure.student ?? {};
-    studentFeeStructure.student = {
-      ...(currentStudent as object),
-      batchId: filters.batchId,
-    };
+    where.status = filters.status as PrismaInstallmentStatus;
   }
 
   const [installments, total] = await Promise.all([

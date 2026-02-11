@@ -177,32 +177,6 @@ export async function deactivateFeeComponent(id: string, scope: TenantScope) {
     throw new NotFoundError("Fee component");
   }
 
-  // Check if component is used in any batch fee structures
-  const usedInBatch = await prisma.batchFeeLineItem.findFirst({
-    where: {
-      feeComponentId: id,
-    },
-  });
-
-  if (usedInBatch) {
-    throw new BadRequestError(
-      "Cannot deactivate this fee component as it is used in batch fee structures. Remove it from all structures first."
-    );
-  }
-
-  // Check if component is used in any student fee structures
-  const usedInStudent = await prisma.studentFeeLineItem.findFirst({
-    where: {
-      feeComponentId: id,
-    },
-  });
-
-  if (usedInStudent) {
-    throw new BadRequestError(
-      "Cannot deactivate this fee component as it is used in student fee structures."
-    );
-  }
-
   return prisma.feeComponent.update({
     where: { id },
     data: { isActive: false },

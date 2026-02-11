@@ -40,7 +40,7 @@ export const attendanceRecordSchema = z.object({
 export const markAttendanceSchema = z.object({
   batchId: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format"),
-  records: z.array(attendanceRecordSchema).min(1),
+  records: z.array(attendanceRecordSchema).min(0),
 });
 
 /**

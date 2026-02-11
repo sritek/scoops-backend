@@ -1,6 +1,6 @@
 import { prisma } from "../../config/database.js";
 import type { TenantScope } from "../../types/request.js";
-import { BadRequestError, NotFoundError } from "../../utils/error-handler.js";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../../utils/error-handler.js";
 import { emitEvent, emitEvents, EVENT_TYPES } from "../events/index.js";
 import { ROLES } from "../../config/permissions";
 import type { MarkAttendanceInput } from "./attendance.schema.js";
@@ -112,7 +112,27 @@ export async function getTeacherBatchId(
 }
 
 /**
+ * Load active students in a batch (single source of truth for "who is in the batch")
+ */
+async function getActiveBatchStudents(batchId: string, scope: TenantScope) {
+  return prisma.student.findMany({
+    where: {
+      batchId,
+      orgId: scope.orgId,
+      branchId: scope.branchId,
+      status: "active",
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+    },
+  });
+}
+
+/**
  * Get attendance for a batch on a specific date
+ * When a session exists, returns all active batch students with status from records or null (unmarked).
  */
 export async function getAttendance(
   batchId: string,
@@ -154,22 +174,9 @@ export async function getAttendance(
     },
   });
 
-  if (!session) {
-    // Return empty attendance with batch students
-    const students = await prisma.student.findMany({
-      where: {
-        batchId,
-        orgId: scope.orgId,
-        branchId: scope.branchId,
-        status: "active",
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-      },
-    });
+  const students = await getActiveBatchStudents(batchId, scope);
 
+  if (!session) {
     return {
       session: null,
       date,
@@ -187,6 +194,23 @@ export async function getAttendance(
     };
   }
 
+  const recordByStudentId = new Map(
+    session.records.map((r) => [r.student.id, { status: r.status, markedAt: r.markedAt }])
+  );
+
+  const records = students.map((s) => {
+    const leaveInfo = studentsOnLeave.get(s.id);
+    const record = recordByStudentId.get(s.id);
+    return {
+      studentId: s.id,
+      studentName: formatFullName(s.firstName, s.lastName),
+      status: record?.status ?? null,
+      ...(record?.markedAt != null && { markedAt: record.markedAt }),
+      onLeave: !!leaveInfo,
+      leaveInfo: leaveInfo ?? null,
+    };
+  });
+
   return {
     session: {
       id: session.id,
@@ -200,26 +224,18 @@ export async function getAttendance(
     },
     date,
     batchId,
-    records: session.records.map((r) => {
-      const leaveInfo = studentsOnLeave.get(r.student.id);
-      return {
-        studentId: r.student.id,
-        studentName: formatFullName(r.student.firstName, r.student.lastName),
-        status: r.status,
-        markedAt: r.markedAt,
-        onLeave: !!leaveInfo,
-        leaveInfo: leaveInfo ?? null,
-      };
-    }),
+    records,
   };
 }
 
 /**
  * Mark attendance for a batch
+ * Only admin may edit after attendance is saved; teachers may only mark unmarked students.
  */
 export async function markAttendance(
   input: MarkAttendanceInput,
   userId: string,
+  role: string,
   scope: TenantScope
 ) {
   const attendanceDate = new Date(input.date);
@@ -234,20 +250,22 @@ export async function markAttendance(
     throw new BadRequestError("Attendance can only be marked for today");
   }
 
-  // Verify all students belong to the batch and tenant
-  const studentIds = input.records.map((r) => r.studentId);
-  const students = await prisma.student.findMany({
-    where: {
-      id: { in: studentIds },
-      batchId: input.batchId,
-      orgId: scope.orgId,
-      branchId: scope.branchId,
-      status: "active",
-    },
-  });
+  // Verify all students belong to the batch and tenant (only when sending records)
+  if (input.records.length > 0) {
+    const studentIds = input.records.map((r) => r.studentId);
+    const students = await prisma.student.findMany({
+      where: {
+        id: { in: studentIds },
+        batchId: input.batchId,
+        orgId: scope.orgId,
+        branchId: scope.branchId,
+        status: "active",
+      },
+    });
 
-  if (students.length !== studentIds.length) {
-    throw new BadRequestError("Some students are not in this batch or do not exist");
+    if (students.length !== studentIds.length) {
+      throw new BadRequestError("Some students are not in this batch or do not exist");
+    }
   }
 
   // Use transaction for atomicity
@@ -274,23 +292,51 @@ export async function markAttendance(
       });
     }
 
-    // Delete existing records for this session (for update case)
+    // Load existing records for edit-after-save and teacher scope rules
+    const existingRecords = await tx.attendanceRecord.findMany({
+      where: { attendanceSessionId: session.id },
+      select: { studentId: true },
+    });
+    const alreadySaved = existingRecords.length > 0;
+    const existingByStudentId = new Set(existingRecords.map((r) => r.studentId));
+
+    // Only admin may edit after attendance is saved for this date
+    if (alreadySaved && role !== ROLES.ADMIN) {
+      throw new ForbiddenError(
+        "Attendance for this date has already been saved. Only an admin can change it."
+      );
+    }
+
+    // Teachers may only add records for students who are not yet marked
+    if (role === ROLES.TEACHER) {
+      for (const r of input.records) {
+        if (existingByStudentId.has(r.studentId)) {
+          throw new ForbiddenError(
+            "Teachers can only mark students who are not yet marked. Already marked students can be changed only by an admin."
+          );
+        }
+      }
+    }
+
+    // Delete existing records for this session (replace-all)
     await tx.attendanceRecord.deleteMany({
       where: {
         attendanceSessionId: session.id,
       },
     });
 
-    // Create new records
-    const now = new Date();
-    await tx.attendanceRecord.createMany({
-      data: input.records.map((r) => ({
-        attendanceSessionId: session.id,
-        studentId: r.studentId,
-        status: r.status,
-        markedAt: now,
-      })),
-    });
+    // Create new records (skip when payload is empty = all unmarked)
+    if (input.records.length > 0) {
+      const now = new Date();
+      await tx.attendanceRecord.createMany({
+        data: input.records.map((r) => ({
+          attendanceSessionId: session.id,
+          studentId: r.studentId,
+          status: r.status,
+          markedAt: now,
+        })),
+      });
+    }
 
     return session;
   });
