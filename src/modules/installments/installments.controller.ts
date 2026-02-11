@@ -124,6 +124,31 @@ export async function updateEMIPlanTemplate(
   });
 }
 
+/**
+ * DELETE /emi-templates/:id
+ * Delete (soft-delete) EMI plan template
+ */
+export async function deleteEMIPlanTemplate(
+  request: ProtectedRequest,
+  reply: FastifyReply
+) {
+  const params = emiTemplateIdParamSchema.safeParse(request.params);
+  if (!params.success) {
+    return reply.code(400).send({
+      error: "Bad Request",
+      message: "Invalid template ID",
+      details: params.error.flatten(),
+    });
+  }
+
+  const scope = getTenantScopeFromRequest(request);
+  await installmentsService.deleteEMIPlanTemplate(params.data.id, scope);
+
+  return reply.code(200).send({
+    message: "EMI plan template deleted successfully",
+  });
+}
+
 // =====================
 // Installment Handlers
 // =====================

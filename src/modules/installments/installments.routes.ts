@@ -167,6 +167,43 @@ export async function installmentsRoutes(app: FastifyInstance) {
     },
     controller.updateEMIPlanTemplate
   );
+
+  /**
+   * DELETE /emi-templates/:id
+   * Delete EMI plan template (soft-delete)
+   * Requires: FEE_UPDATE
+   */
+  app.delete(
+    "/:id",
+    {
+      schema: {
+        tags: ["EMI Templates"],
+        summary: "Delete EMI plan template",
+        description: "Soft-deletes an EMI plan template (sets isActive to false)",
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+          },
+          required: ["id"],
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+            },
+          },
+        },
+      },
+      preHandler: [
+        branchContextMiddleware,
+        requirePermission(PERMISSIONS.FEE_UPDATE),
+      ],
+    },
+    controller.deleteEMIPlanTemplate
+  );
 }
 
 /**

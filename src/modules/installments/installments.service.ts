@@ -33,7 +33,7 @@ export async function getEMIPlanTemplates(scope: TenantScope) {
       orgId: scope.orgId,
       isActive: true,
     },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    orderBy: [{ name: "asc" }],
   });
 }
 
@@ -62,15 +62,30 @@ export async function createEMIPlanTemplate(
   input: CreateEMIPlanTemplateInput,
   scope: TenantScope
 ) {
+  // Check for duplicate installment count
+  const existingByCount = await prisma.eMIPlanTemplate.findFirst({
+    where: {
+      orgId: scope.orgId,
+      installmentCount: input.installmentCount,
+      isActive: true,
+    },
+  });
+
+  if (existingByCount) {
+    throw new BadRequestError(
+      `An EMI plan template with ${input.installmentCount} installments already exists.`,
+    );
+  }
+
   // Check for duplicate name
-  const existing = await prisma.eMIPlanTemplate.findFirst({
+  const existingByName = await prisma.eMIPlanTemplate.findFirst({
     where: {
       orgId: scope.orgId,
       name: input.name,
     },
   });
 
-  if (existing) {
+  if (existingByName) {
     throw new BadRequestError(`An EMI plan template with name "${input.name}" already exists`);
   }
 
@@ -170,6 +185,27 @@ export async function updateEMIPlanTemplate(
       isDefault: input.isDefault,
       isActive: input.isActive,
     },
+  });
+}
+
+/**
+ * Delete (soft-delete) EMI plan template
+ */
+export async function deleteEMIPlanTemplate(id: string, scope: TenantScope) {
+  const existing = await prisma.eMIPlanTemplate.findFirst({
+    where: {
+      id,
+      orgId: scope.orgId,
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundError("EMI plan template");
+  }
+
+  await prisma.eMIPlanTemplate.update({
+    where: { id },
+    data: { isActive: false },
   });
 }
 
